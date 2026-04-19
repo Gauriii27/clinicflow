@@ -96,54 +96,65 @@ export const generatePrescriptionPDF = (prescription, patient) => {
   });
 
   // --- FOOTER SECTION ---
-  
-  const finalY = doc.lastAutoTable.finalY || 150;
+  const finalY = (doc).lastAutoTable?.finalY || 150;
 
   if (prescription.instructions) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
-    doc.text('Instructions:', 15, finalY + 15);
+    doc.text('Physician Advice:', 15, finalY + 15);
     doc.setFont('helvetica', 'normal');
     const splitInstructions = doc.splitTextToSize(prescription.instructions, pageWidth - 30);
     doc.text(splitInstructions, 15, finalY + 22);
   }
 
   // Signature Area
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
+  const signatureY = Math.max(finalY + 40, 250); // Keep it towards the bottom if possible
   
-  // Draw Signature Image
   try {
-    doc.addImage(signatureImg, 'PNG', pageWidth - 55, finalY + 25, 35, 20);
+    if (signatureImg) {
+      doc.addImage(signatureImg, 'PNG', pageWidth - 60, signatureY - 20, 40, 15);
+    }
   } catch (err) {
-    console.error('Error adding signature image:', err);
+    console.error('Signature skip:', err);
   }
 
-  doc.text('Doctor\'s Signature', pageWidth - 15, finalY + 50, { align: 'right' });
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text('Doctor\'s Signature', pageWidth - 15, signatureY, { align: 'right' });
   doc.setLineWidth(0.2);
-  doc.line(pageWidth - 60, finalY + 45, pageWidth - 15, finalY + 45);
+  doc.line(pageWidth - 65, signatureY - 5, pageWidth - 15, signatureY - 5);
 
-  // Return as Blob or Save
   return doc;
 };
 
-// Helper to calculate age
+// Helper to calculate age precisely
 const calculateAge = (dob) => {
   if (!dob) return '--';
-  const birthYear = new Date(dob).getFullYear();
-  const currentYear = new Date().getFullYear();
-  return `${currentYear - birthYear} Yrs`;
+  try {
+    const birthDate = new Date(dob);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    return age > 0 ? `${age} Yrs` : 'Child';
+  } catch (e) {
+    return '--';
+  }
 };
 
 export const shareViaWhatsApp = (prescription, patient) => {
-  const patientName = `${patient.first_name} ${patient.last_name}`;
+  const patientName = patient ? `${patient.first_name || ''} ${patient.last_name || ''}`.trim() : 'Patient';
   const medsSummary = (prescription.medications || [])
     .map(m => `• ${m.medicine_name || m.name}: ${m.dosage} (${m.frequency})`)
     .join('%0A');
     
-  const message = `*Dhanwantari Clinic - Digital Prescription*%0A%0A*Patient:* ${patientName}%0A*Date:* ${new Date().toLocaleDateString()}%0A%0A*Medicines:*%0A${medsSummary}%0A%0A*Instructions:* ${prescription.instructions || 'N/A'}%0A%0APlease download your full PDF prescription from the portal.`;
+  const message = `*Dhanwantari Clinic - Digital Script*%0A%0A*Patient:* ${patientName}%0A*Date:* ${new Date().toLocaleDateString()}%0A%0A*Rx Medications:*%0A${medsSummary}%0A%0A*Advisory:* ${prescription.instructions || 'Follow as directed'}%0A%0A_Generated via ClinicFlow Digital Portal_`;
   
-  const phone = patient.phone ? patient.phone.replace(/\D/g, '') : '';
-  const url = `https://wa.me/${phone.length === 10 ? '91'+phone : phone}?text=${message}`;
+  const phone = patient?.phone ? patient.phone.replace(/\D/g, '') : '';
+  // Check for Indian number format
+  const formattedPhone = phone.length === 10 ? '91' + phone : phone;
+  const url = `https://wa.me/${formattedPhone}?text=${message}`;
   window.open(url, '_blank');
 };

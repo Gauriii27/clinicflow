@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Search, Plus, Eye, Trash2, X, Download, MessageCircle, FileText, Activity } from 'lucide-react';
+import { Search, Plus, Eye, Trash2, X, Download, MessageCircle, FileText, Activity, Pill } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import { generatePrescriptionPDF, shareViaWhatsApp } from '../utils/pdfGenerator';
 import bgImage from '../assets/medical_bg.png';
@@ -33,61 +33,41 @@ const PrescriptionManagement = () => {
 
   const [searchParams] = useSearchParams();
 
-  useEffect(() => {
-    fetchPrescriptions();
-    fetchPatients();
-    
-    // Check for patientId in URL
-    const pId = searchParams.get('patientId');
-    const diag = searchParams.get('diagnosis');
-    if (pId) {
-      setFormData(prev => ({
-        ...prev,
-        patient_id: pId,
-        diagnosis: diag || ''
-      }));
-      setShowModal(true);
-    }
-  }, [searchParams]);
-
-  useEffect(() => {
-    const filtered = prescriptions.filter(
-      (prescription) =>
-        prescription.patients?.first_name
-          ?.toLowerCase()
-          .includes(searchTerm.toLowerCase()) ||
-        prescription.patients?.last_name
-          ?.toLowerCase()
-          .includes(searchTerm.toLowerCase()) ||
-        prescription.diagnosis?.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-    setFilteredPrescriptions(filtered);
-  }, [searchTerm, prescriptions]);
-
-  const fetchPrescriptions = async () => {
+  async function fetchRecipes() {
     try {
+      // Using explicit join names to avoid schema cache ambiguities
       const { data, error } = await supabase
         .from('prescriptions')
         .select(`
           *,
           patients (first_name, last_name),
-          users!prescriptions_doctor_id_fkey (full_name)
+          users!doctor_id (full_name)
         `)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setPrescriptions(data || []);
-      setFilteredPrescriptions(data || []);
+      if (error) {
+        console.error('Join fetch failed, trying simplified fetch:', error);
+        // Fallback to simple fetch if relationship is really broken in cache
+        const { data: simpleData, error: simpleError } = await supabase
+          .from('prescriptions')
+          .select('*')
+          .order('created_at', { ascending: false });
+        
+        if (simpleError) throw simpleError;
+        setPrescriptions(simpleData || []);
+      } else {
+        setPrescriptions(data || []);
+      }
     } catch (error) {
       console.error('Error fetching prescriptions:', error);
     }
-  };
+  }
 
-  const fetchPatients = async () => {
+  async function fetchPatientList() {
     try {
       const { data, error } = await supabase
         .from('patients')
-        .select('id, first_name, last_name')
+        .select('id, first_name, last_name, date_of_birth, gender, phone')
         .order('first_name', { ascending: true });
 
       if (error) throw error;
@@ -95,23 +75,16 @@ const PrescriptionManagement = () => {
     } catch (error) {
       console.error('Error fetching patients:', error);
     }
-  };
+  }
 
-  const handleSubmit = async (e, actionType = 'save') => {
+  async function handleSubmit(e, actionType = 'save') {
     if (e) e.preventDefault();
     
-    // Validation
-    if (!formData.patient_id) {
-      alert('Please select a patient');
-      return;
-    }
-    if (!formData.diagnosis || formData.diagnosis.trim() === '') {
-      alert('Please enter a diagnosis');
-      return;
-    }
+    if (!formData.patient_id) { alert('Please select a patient'); return; }
+    if (!formData.diagnosis?.trim()) { alert('Please enter a diagnosis'); return; }
     if (formData.medications.length === 0 || !formData.medications[0].medicine_name) {
-      alert('Please add at least one medication');
-      return;
+      alert('Please add at least one medication'); 
+      return; 
     }
 
     setLoading(true);
@@ -134,7 +107,7 @@ const PrescriptionManagement = () => {
 
       if (error) throw error;
 
-      // Automatically mark today's appointment as completed
+      // Automatically mark today's appointment as completed if it exists
       const today = new Date().toISOString().split('T')[0];
       await supabase
         .from('appointments')
@@ -144,144 +117,126 @@ const PrescriptionManagement = () => {
         .eq('appointment_date', today)
         .eq('status', 'scheduled');
 
-      const patient = patients.find(p => p.id === formData.patient_id);
+      const fullPatient = patients.find(p => p.id === formData.patient_id);
 
-      // Trigger chosen action
       if (actionType === 'pdf') {
-        const doc = generatePrescriptionPDF(data, patient);
-        doc.save(`Prescription_${patient.first_name}_${new Date().toISOString().split('T')[0]}.pdf`);
+        const doc = generatePrescriptionPDF(data, fullPatient);
+        doc.save(`Prescription_${fullPatient?.first_name || 'Patient'}_${new Date().toISOString().split('T')[0]}.pdf`);
       } else if (actionType === 'whatsapp') {
-        shareViaWhatsApp(data, patient);
+        shareViaWhatsApp(data, fullPatient);
       }
 
-      fetchPrescriptions();
+      fetchRecipes();
       resetForm();
       setShowModal(false);
-      alert('Prescription saved successfully!');
+      alert('Prescription processed successfully!');
     } catch (error) {
       console.error('Error creating prescription:', error);
       alert('Failed to save prescription: ' + (error.message || 'Unknown error'));
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const handleDownload = (prescription) => {
-    const patient = patients.find(p => p.id === prescription.patient_id) || prescription.patients;
-    const doc = generatePrescriptionPDF(prescription, patient);
-    doc.save(`Prescription_${patient.first_name}_${new Date().toISOString().split('T')[0]}.pdf`);
-  };
+  function handleDownload(prescription) {
+    const p = patients.find(p => p.id === prescription.patient_id) || prescription.patients;
+    if (!p) { alert('Patient data not found for PDF'); return; }
+    const doc = generatePrescriptionPDF(prescription, p);
+    doc.save(`Prescription_${p.first_name || 'Patient'}_${new Date().toISOString().split('T')[0]}.pdf`);
+  }
 
-  const handleWhatsAppShare = (prescription) => {
-    const patient = patients.find(p => p.id === prescription.patient_id) || prescription.patients;
-    shareViaWhatsApp(prescription, patient);
-  };
+  function handleWhatsApp(prescription) {
+    const p = patients.find(p => p.id === prescription.patient_id) || prescription.patients;
+    if (!p) { alert('Patient data not found for WhatsApp'); return; }
+    shareViaWhatsApp(prescription, p);
+  }
 
-  const handleDelete = async (id) => {
+  async function handleDelete(id) {
     if (!confirm('Are you sure you want to delete this prescription?')) return;
-
     try {
-      const { error } = await supabase
-        .from('prescriptions')
-        .delete()
-        .eq('id', id);
-
+      const { error } = await supabase.from('prescriptions').delete().eq('id', id);
       if (error) throw error;
-      fetchPrescriptions();
+      fetchRecipes();
     } catch (error) {
       console.error('Error deleting prescription:', error);
-      alert('Failed to delete prescription');
     }
-  };
+  }
 
-  const addMedication = () => {
-    setFormData({
-      ...formData,
-      medications: [
-        ...formData.medications,
-        { medicine_name: '', dosage: '', frequency: '', duration: '' },
-      ],
-    });
-  };
-
-  const removeMedication = (index) => {
-    const newMedications = formData.medications.filter((_, i) => i !== index);
-    setFormData({ ...formData, medications: newMedications });
-  };
-
-  const updateMedication = (index, field, value) => {
-    const newMedications = formData.medications.map((med, i) =>
+  function updateMedication(index, field, value) {
+    const newMeds = formData.medications.map((med, i) =>
       i === index ? { ...med, [field]: value } : med
     );
-    setFormData({ ...formData, medications: newMedications });
-  };
+    setFormData({ ...formData, medications: newMeds });
+  }
 
-  const resetForm = () => {
+  function resetForm() {
     setFormData({
       patient_id: '',
       diagnosis: '',
       instructions: '',
-      medications: [
-        {
-          medicine_name: '',
-          dosage: '',
-          frequency: '',
-          duration: '',
-        },
-      ],
+      medications: [{ medicine_name: '', dosage: '', frequency: '', duration: '' }],
     });
-  };
+  }
+
+  useEffect(() => {
+    fetchRecipes();
+    fetchPatientList();
+    
+    const pId = searchParams.get('patientId');
+    const diag = searchParams.get('diagnosis');
+    if (pId) {
+      setFormData(prev => ({ ...prev, patient_id: pId, diagnosis: diag || '' }));
+      setShowModal(true);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    const filtered = prescriptions.filter(px =>
+      px.patients?.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      px.patients?.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      px.diagnosis?.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+    setFilteredPrescriptions(filtered);
+  }, [searchTerm, prescriptions]);
 
   return (
-    <div className="min-h-screen flex flex-col relative overflow-hidden bg-slate-900 animate-fade-in">
-      {/* Dynamic Background */}
-      <div 
-        className="fixed inset-0 z-0 bg-cover bg-center bg-no-repeat opacity-30 mix-blend-overlay scale-110"
-        style={{ backgroundImage: `url(${bgImage})` }}
-      />
-      
-      {/* Floating Bubbles */}
+    <div className="min-h-screen relative overflow-hidden bg-slate-900 font-['Outfit']">
+      <div className="fixed inset-0 z-0 bg-cover bg-center opacity-40 mix-blend-overlay" style={{ backgroundImage: `url(${bgImage})` }} />
       <div className="fixed inset-0 z-0 pointer-events-none">
-        <div className="absolute top-[20%] right-[10%] w-96 h-96 rounded-full bg-teal-500/10 blur-3xl animate-float" />
-        <div className="absolute bottom-[10%] left-[5%] w-72 h-72 rounded-full bg-blue-500/10 blur-3xl animate-float-delayed" />
+        <div className="absolute top-[20%] right-[10%] w-96 h-96 rounded-full bg-teal-500/10 blur-3xl" />
+        <div className="absolute bottom-[10%] left-[5%] w-72 h-72 rounded-full bg-blue-500/10 blur-3xl" />
       </div>
 
-      <div className="relative z-10 flex flex-col min-h-screen">
+      <div className="relative z-10 flex flex-col min-h-screen backdrop-blur-[1px]">
         <Navbar />
         
-        <main className="flex-1 w-full max-w-6xl mx-auto py-10 px-6 space-y-8">
+        <main className="flex-1 w-full max-w-6xl mx-auto py-10 px-6 space-y-8 animate-fade-in">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div>
-              <h1 className="text-[2.5rem] font-black text-white tracking-tight drop-shadow-md flex items-center gap-3">
-                <FileText className="w-10 h-10 text-teal-300" />
-                Prescription Log
+              <h1 className="text-[2.6rem] font-bold text-white tracking-tight drop-shadow-md">
+                Prescription <span className="text-teal-300">Vault</span>
               </h1>
-              <p className="text-teal-50/60 font-medium text-lg mt-1 ml-1">
-                Clinical archives and patient medication history
-              </p>
+              <p className="text-teal-50/60 text-[1.1rem] font-medium mt-1">Clinical archives and medication issuance.</p>
             </div>
             <button
-              onClick={() => {
-                resetForm();
-                setShowModal(true);
-              }}
-              className="flex items-center gap-2 px-8 py-4 bg-teal-500 hover:bg-teal-400 text-white rounded-2xl font-black text-sm uppercase tracking-widest transition-all shadow-lg shadow-teal-500/20 active:scale-95"
+              onClick={() => { resetForm(); setShowModal(true); }}
+              className="flex items-center gap-3 px-8 py-4 bg-teal-500 hover:bg-teal-400 text-white rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg active:scale-95 group"
             >
-              <Plus className="w-5 h-5" />
-              New Prescription
+              <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform" />
+              Issue New Script
             </button>
           </div>
 
-          <div className="glass-card rounded-[2rem] overflow-hidden border-white/10">
-            <div className="p-8 border-b border-white/10 bg-white/5">
+          <div className="glass-card rounded-[2.5rem] overflow-hidden border-white/10 shadow-2xl">
+            <div className="p-6 border-b border-white/10 bg-white/5">
               <div className="relative group max-w-md">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/20 group-focus-within:text-teal-400 w-5 h-5 transition-colors" />
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30 w-5 h-5" />
                 <input
                   type="text"
-                  placeholder="Search by patient name or diagnosis..."
+                  placeholder="SEARCH ARCHIVES..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-12 pr-4 py-4 bg-white/5 border border-white/10 rounded-2xl focus:outline-none focus:ring-4 focus:ring-teal-500/10 focus:bg-white/10 transition-all text-white font-medium placeholder:text-white/20"
+                  className="w-full pl-12 pr-6 py-4 bg-white/5 border border-white/10 rounded-2xl focus:outline-none focus:ring-4 focus:ring-teal-500/10 text-white font-black text-xs uppercase tracking-widest placeholder:text-white/20"
                 />
               </div>
             </div>
@@ -290,82 +245,52 @@ const PrescriptionManagement = () => {
               <table className="w-full">
                 <thead>
                   <tr className="bg-white/5">
-                    <th className="px-8 py-5 text-left text-xs font-black text-white/40 uppercase tracking-[0.2em]">Patient</th>
-                    <th className="px-8 py-5 text-left text-xs font-black text-white/40 uppercase tracking-[0.2em]">Doctor</th>
-                    <th className="px-8 py-5 text-left text-xs font-black text-white/40 uppercase tracking-[0.2em]">Diagnosis</th>
-                    <th className="px-8 py-5 text-left text-xs font-black text-white/40 uppercase tracking-[0.2em]">Date</th>
-                    <th className="px-8 py-5 text-right text-xs font-black text-white/40 uppercase tracking-[0.2em]">Actions</th>
+                    <th className="px-8 py-5 text-left text-[0.65rem] font-black text-white/40 uppercase tracking-widest">Member</th>
+                    <th className="px-8 py-5 text-left text-[0.65rem] font-black text-white/40 uppercase tracking-widest">Diagnosis</th>
+                    <th className="px-8 py-5 text-left text-[0.65rem] font-black text-white/40 uppercase tracking-widest">Issued</th>
+                    <th className="px-8 py-5 text-right text-[0.65rem] font-black text-white/40 uppercase tracking-widest">Audit</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
                   {filteredPrescriptions.length > 0 ? (
                     filteredPrescriptions.map((px) => (
-                      <tr key={px.id} className="hover:bg-white/5 transition-colors group">
-                        <td className="px-8 py-6 whitespace-nowrap">
+                      <tr key={px.id} className="group hover:bg-white/5 transition-all">
+                        <td className="px-8 py-6">
                           <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-teal-500/10 flex items-center justify-center font-bold text-teal-300 border border-teal-500/20">
-                              {px.patients?.first_name?.charAt(0)}
+                            <div className="w-10 h-10 rounded-xl bg-teal-500/10 flex items-center justify-center border border-teal-500/20">
+                              <span className="text-teal-300 font-black">{px.patients?.first_name?.[0] || 'P'}</span>
                             </div>
-                            <div className="text-sm font-bold text-white tracking-tight">
-                              {px.patients?.first_name} {px.patients?.last_name}
+                            <div>
+                              <p className="text-white font-black text-lg tracking-tight group-hover:text-teal-300 transition-colors">
+                                {px.patients?.first_name} {px.patients?.last_name}
+                              </p>
+                              <p className="text-white/30 text-[0.6rem] font-bold uppercase tracking-widest">DOC_REF: Dr. {px.users?.full_name?.split(' ').pop() || 'Yewale'}</p>
                             </div>
                           </div>
                         </td>
-                        <td className="px-8 py-6 whitespace-nowrap">
-                           <div className="flex items-center gap-2">
-                             <Activity className="w-3.5 h-3.5 text-blue-400/50" />
-                             <span className="text-sm font-medium text-white/60">Dr. {px.users?.full_name?.split(' ')[px.users?.full_name?.split(' ').length - 1]}</span>
-                           </div>
+                        <td className="px-8 py-6">
+                          <span className="text-white/60 font-medium text-sm italic">"{px.diagnosis}"</span>
                         </td>
                         <td className="px-8 py-6">
-                          <span className="text-sm text-white/40 font-medium line-clamp-1">{px.diagnosis}</span>
-                        </td>
-                        <td className="px-8 py-6 whitespace-nowrap">
-                          <span className="text-[0.65rem] font-bold text-teal-300/60 bg-teal-500/10 px-3 py-1 rounded-full uppercase tracking-widest">
+                          <span className="px-3 py-1 bg-white/5 rounded-full text-teal-300 font-bold text-[0.65rem] uppercase tracking-widest border border-white/5">
                             {new Date(px.prescription_date).toLocaleDateString()}
                           </span>
                         </td>
-                        <td className="px-8 py-6 whitespace-nowrap text-right">
-                          <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button
-                              onClick={() => setViewingPrescription(px)}
-                              className="p-3 bg-white/5 hover:bg-blue-500/20 text-blue-300 rounded-xl transition-all border border-white/5 hover:border-blue-500/30"
-                              title="View & Share"
-                            >
-                              <Eye className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDownload(px)}
-                              className="p-3 bg-white/5 hover:bg-teal-500/20 text-teal-300 rounded-xl transition-all border border-white/5 hover:border-teal-500/30"
-                              title="Download PDF"
-                            >
-                              <Download className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleWhatsAppShare(px)}
-                              className="p-3 bg-white/5 hover:bg-green-500/20 text-[#25D366] rounded-xl transition-all border border-white/5 hover:border-green-500/30"
-                              title="WhatsApp Share"
-                            >
-                              <MessageCircle className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDelete(px.id)}
-                              className="p-3 bg-white/5 hover:bg-red-500/20 text-red-400 rounded-xl transition-all border border-white/5 hover:border-red-500/30"
-                              title="Delete"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                        <td className="px-8 py-6 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button onClick={() => setViewingPrescription(px)} className="p-3 bg-white/5 hover:bg-teal-500 text-white rounded-xl transition-all"><Eye className="w-4 h-4"/></button>
+                            <button onClick={() => handleDownload(px)} className="p-3 bg-white/5 hover:bg-teal-500 text-white rounded-xl transition-all"><Download className="w-4 h-4"/></button>
+                            <button onClick={() => handleWhatsApp(px)} className="p-3 bg-white/5 hover:bg-green-500 text-white rounded-xl transition-all"><MessageCircle className="w-4 h-4"/></button>
+                            <button onClick={() => handleDelete(px.id)} className="p-3 bg-white/5 hover:bg-red-500 text-white rounded-xl transition-all"><Trash2 className="w-4 h-4"/></button>
                           </div>
                         </td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan="5" className="px-8 py-20 text-center">
-                        <div className="bg-white/5 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-                           <FileText className="w-8 h-8 text-white/10" />
-                        </div>
-                        <p className="text-white/30 font-bold uppercase tracking-widest text-sm">No prescriptions archived</p>
+                      <td colSpan="4" className="px-8 py-20 text-center opacity-30">
+                        <FileText className="w-16 h-16 mx-auto mb-4" strokeWidth={1} />
+                        <p className="font-black text-xs uppercase tracking-widest">No active scripts found</p>
                       </td>
                     </tr>
                   )}
@@ -374,279 +299,101 @@ const PrescriptionManagement = () => {
             </div>
           </div>
 
-          {/* Form Modal */}
+          {/* New Script Modal */}
           {showModal && (
-            <div className="fixed inset-0 bg-slate-950/60 flex items-center justify-center z-[100] p-4 animate-fade-in backdrop-blur-xl">
-              <div className="glass-modal rounded-[3rem] max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl relative">
-                <div className="p-8 border-b border-white/10 bg-white/5 flex items-center justify-between sticky top-0 z-10">
-                  <div>
-                    <h2 className="text-3xl font-black text-white tracking-tight italic">
-                      New Script
-                    </h2>
-                    <p className="text-xs font-black text-teal-400 uppercase tracking-[0.3em] mt-1">Prescription Issuance Form</p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setShowModal(false);
-                      resetForm();
-                    }}
-                    className="p-3 bg-white/5 hover:bg-white/10 rounded-2xl transition-all border border-white/10"
-                  >
-                    <X className="w-6 h-6 text-white/50" />
-                  </button>
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 backdrop-blur-md bg-slate-950/60 animate-fade-in">
+              <div className="glass-card w-full max-w-4xl rounded-[2.5rem] border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+                <div className="px-10 py-8 border-b border-white/10 flex items-center justify-between bg-white/5">
+                  <h2 className="text-2xl font-black text-white uppercase tracking-widest">New Clinical Script</h2>
+                  <button onClick={() => { setShowModal(false); resetForm(); }} className="p-2 hover:bg-white/10 rounded-xl transition-colors"><X className="w-6 h-6 text-white/40" /></button>
                 </div>
-
-                <form onSubmit={handleSubmit} className="p-8 space-y-8 overflow-y-auto flex-1 custom-scrollbar">
+                
+                <form onSubmit={handleSubmit} className="p-10 overflow-y-auto space-y-8 flex-1 custom-scrollbar">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="space-y-2">
-                      <label className="text-[0.65rem] font-black text-teal-300 uppercase tracking-[0.2em] ml-2">
-                        Patient Profile *
-                      </label>
-                      <select
-                        required
-                        value={formData.patient_id}
-                        onChange={(e) =>
-                          setFormData({ ...formData, patient_id: e.target.value })
-                        }
-                        className="w-full px-5 py-4 bg-white/5 border border-white/10 rounded-2xl focus:outline-none focus:ring-4 focus:ring-teal-500/10 focus:bg-white/10 text-white font-medium appearance-none"
-                      >
-                        <option value="" className="bg-slate-900">Select Member</option>
-                        {patients.map((p) => (
-                          <option key={p.id} value={p.id} className="bg-slate-900">
-                            {p.first_name} {p.last_name}
-                          </option>
-                        ))}
+                    <div className="space-y-3">
+                      <label className="text-[0.65rem] font-black text-teal-300 uppercase tracking-widest px-1">Registered Member</label>
+                      <select required value={formData.patient_id} onChange={(e) => setFormData({ ...formData, patient_id: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-6 text-white text-sm focus:ring-2 focus:ring-teal-500/30 transition-all appearance-none">
+                        <option value="" className="bg-slate-900">Select Patient...</option>
+                        {patients.map((p) => <option key={p.id} value={p.id} className="bg-slate-900">{p.first_name} {p.last_name}</option>)}
                       </select>
                     </div>
-
-                    <div className="space-y-2">
-                      <label className="text-[0.65rem] font-black text-teal-300 uppercase tracking-[0.2em] ml-2">
-                        Primary Diagnosis *
-                      </label>
-                      <textarea
-                        required
-                        value={formData.diagnosis}
-                        onChange={(e) =>
-                          setFormData({ ...formData, diagnosis: e.target.value })
-                        }
-                        rows="1"
-                        className="w-full px-5 py-4 bg-white/5 border border-white/10 rounded-2xl focus:outline-none focus:ring-4 focus:ring-teal-500/10 focus:bg-white/10 text-white font-medium placeholder:text-white/20"
-                        placeholder="Ex: Viral Fever, Hypertension..."
-                      />
+                    <div className="space-y-3">
+                      <label className="text-[0.65rem] font-black text-teal-300 uppercase tracking-widest px-1">Initial Diagnosis</label>
+                      <input required type="text" value={formData.diagnosis} onChange={(e) => setFormData({ ...formData, diagnosis: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-6 text-white text-sm focus:ring-2 focus:ring-teal-500/30" placeholder="Manifested condition..." />
                     </div>
                   </div>
 
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between mb-4">
-                      <h3 className="text-lg font-bold text-white tracking-tight flex items-center gap-2">
-                        <Pill className="w-5 h-5 text-blue-400" />
-                        Medication Regimen
-                      </h3>
-                      <button
-                        type="button"
-                        onClick={addMedication}
-                        className="text-[0.65rem] font-black text-teal-400 hover:text-teal-300 bg-teal-500/10 px-4 py-2 rounded-xl transition-all uppercase tracking-widest border border-teal-500/20"
-                      >
-                        + Add Drug
-                      </button>
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-lg font-black text-white uppercase tracking-tighter italic">Drug Inventory</h3>
+                      <button type="button" onClick={() => setFormData({...formData, medications: [...formData.medications, {medicine_name: '', dosage: '', frequency: '', duration: ''}]})} className="px-4 py-2 bg-white/5 hover:bg-teal-500 text-white rounded-xl transition-all font-black text-[0.6rem] uppercase tracking-widest border border-white/5">+ Add Capsule</button>
                     </div>
                     
                     <div className="space-y-4">
                       {formData.medications.map((med, idx) => (
-                        <div key={idx} className="glass-card bg-white/5 p-6 rounded-[2rem] border-white/5 space-y-4 relative group">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[0.6rem] font-black text-white/30 uppercase tracking-[0.3em]">Module {idx + 1}</span>
-                            {formData.medications.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => removeMedication(idx)}
-                                className="w-8 h-8 flex items-center justify-center bg-red-500/10 text-red-400 rounded-full hover:bg-red-500 hover:text-white transition-all"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                            )}
-                          </div>
-                          
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                            <input
-                              type="text"
-                              placeholder="Drug Name"
-                              required
-                              value={med.medicine_name}
-                              onChange={(e) => updateMedication(idx, 'medicine_name', e.target.value)}
-                              className="px-5 py-3.5 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/20 text-white text-sm"
-                            />
-                            <input
-                              type="text"
-                              placeholder="Dosage (500mg)"
-                              required
-                              value={med.dosage}
-                              onChange={(e) => updateMedication(idx, 'dosage', e.target.value)}
-                              className="px-5 py-3.5 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/20 text-white text-sm"
-                            />
-                            <input
-                              type="text"
-                              placeholder="Frequency"
-                              required
-                              value={med.frequency}
-                              onChange={(e) => updateMedication(idx, 'frequency', e.target.value)}
-                              className="px-5 py-3.5 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/20 text-white text-sm"
-                            />
-                            <input
-                              type="text"
-                              placeholder="Duration"
-                              required
-                              value={med.duration}
-                              onChange={(e) => updateMedication(idx, 'duration', e.target.value)}
-                              className="px-5 py-3.5 bg-white/5 border border-white/10 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/20 text-white text-sm"
-                            />
+                        <div key={idx} className="p-6 rounded-2xl bg-white/5 border border-white/5 grid grid-cols-1 md:grid-cols-4 gap-4 relative group">
+                          <input type="text" placeholder="DRUG NAME" required value={med.medicine_name} onChange={(e) => updateMedication(idx, 'medicine_name', e.target.value)} className="bg-white/5 border border-white/5 rounded-xl px-4 py-3 text-white text-xs font-black uppercase tracking-widest focus:border-teal-500/50" />
+                          <input type="text" placeholder="DOSAGE" required value={med.dosage} onChange={(e) => updateMedication(idx, 'dosage', e.target.value)} className="bg-white/5 border border-white/5 rounded-xl px-4 py-3 text-white text-xs font-black uppercase tracking-widest focus:border-teal-500/50" />
+                          <input type="text" placeholder="FREQ" required value={med.frequency} onChange={(e) => updateMedication(idx, 'frequency', e.target.value)} className="bg-white/5 border border-white/5 rounded-xl px-4 py-3 text-white text-xs font-black uppercase tracking-widest focus:border-teal-500/50" />
+                          <div className="flex gap-2">
+                             <input type="text" placeholder="DUR" required value={med.duration} onChange={(e) => updateMedication(idx, 'duration', e.target.value)} className="flex-1 bg-white/5 border border-white/5 rounded-xl px-4 py-3 text-white text-xs font-black uppercase tracking-widest focus:border-teal-500/50" />
+                             {formData.medications.length > 1 && <button type="button" onClick={() => setFormData({...formData, medications: formData.medications.filter((_, i) => i !== idx)})} className="p-3 bg-red-500/10 text-red-400 rounded-xl hover:bg-red-500 hover:text-white transition-all"><X className="w-4 h-4"/></button>}
                           </div>
                         </div>
                       ))}
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <label className="text-[0.65rem] font-black text-teal-300 uppercase tracking-[0.2em] ml-2">
-                      Special Instructions
-                    </label>
-                    <textarea
-                      value={formData.instructions}
-                      onChange={(e) => setFormData({ ...formData, instructions: e.target.value })}
-                      rows="3"
-                      className="w-full px-5 py-4 bg-white/5 border border-white/10 rounded-[1.5rem] focus:outline-none focus:ring-4 focus:ring-teal-500/10 focus:bg-white/10 text-white font-medium placeholder:text-white/20"
-                      placeholder="Ex: Take after meals, Avoid cold drinks..."
-                    />
+                  <div className="space-y-3">
+                    <label className="text-[0.65rem] font-black text-teal-300 uppercase tracking-widest px-1">Physician Advisory</label>
+                    <textarea value={formData.instructions} onChange={(e) => setFormData({ ...formData, instructions: e.target.value })} rows="3" className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-6 text-white text-sm focus:ring-2 focus:ring-teal-500/30" placeholder="Special medication instructions..." />
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-8 border-t border-white/10">
-                    <button
-                      type="button"
-                      disabled={loading}
-                      onClick={() => handleSubmit(null, 'pdf')}
-                      className="bg-teal-500 hover:bg-teal-400 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg shadow-teal-500/20 flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95"
-                    >
-                      <Download className="w-5 h-5" />
-                      {loading ? '...' : 'PDF Export'}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={loading}
-                      onClick={() => handleSubmit(null, 'whatsapp')}
-                      className="bg-[#25D366] hover:bg-[#20ba59] text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg shadow-green-500/20 flex items-center justify-center gap-2 disabled:opacity-50 active:scale-95"
-                    >
-                      <MessageCircle className="w-5 h-5" />
-                      {loading ? '...' : 'WhatsApp'}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={loading}
-                      onClick={() => handleSubmit(null, 'save')}
-                      className="bg-white/10 hover:bg-white/20 text-white py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all backdrop-blur-md border border-white/10 disabled:opacity-50 active:scale-95"
-                    >
-                      Save Only
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowModal(false);
-                        resetForm();
-                      }}
-                      className="bg-red-500/10 hover:bg-red-500/20 text-red-400 py-4 rounded-2xl font-black text-xs uppercase tracking-widest transition-all border border-red-500/10 active:scale-95"
-                    >
-                      Discard
-                    </button>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-8">
+                    <button type="button" onClick={() => handleSubmit(null, 'pdf')} disabled={loading} className="py-5 bg-teal-500 hover:bg-teal-400 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"><Download className="w-5 h-5"/> PDF Export</button>
+                    <button type="button" onClick={() => handleSubmit(null, 'whatsapp')} disabled={loading} className="py-5 bg-green-500 hover:bg-green-400 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"><MessageCircle className="w-5 h-5"/> WhatsApp</button>
+                    <button type="button" onClick={() => handleSubmit(null, 'save')} disabled={loading} className="py-5 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-black text-xs uppercase tracking-widest border border-white/10 active:scale-95 disabled:opacity-50">Save Only</button>
                   </div>
                 </form>
               </div>
             </div>
           )}
 
-          {/* Viewing Transition Modal */}
+          {/* Preview Script Modal */}
           {viewingPrescription && (
-            <div className="fixed inset-0 bg-slate-950/60 flex items-center justify-center z-[110] p-4 animate-fade-in backdrop-blur-2xl">
-              <div className="glass-modal rounded-[3rem] max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl relative">
-                <div className="p-8 border-b border-white/10 bg-white/5 flex items-center justify-between sticky top-0 z-10">
-                  <h2 className="text-2xl font-black text-white tracking-tight italic">
-                    Script Details
-                  </h2>
-                  <button
-                    onClick={() => setViewingPrescription(null)}
-                    className="p-3 bg-white/5 hover:bg-white/10 rounded-2xl transition-all border border-white/10"
-                  >
-                    <X className="w-6 h-6 text-white/50" />
-                  </button>
+            <div className="fixed inset-0 z-[110] flex items-center justify-center p-6 backdrop-blur-md bg-slate-950/60 animate-fade-in shadow-2xl">
+              <div className="glass-card w-full max-w-2xl rounded-[3rem] border-white/10 overflow-hidden flex flex-col max-h-[90vh]">
+                <div className="p-8 border-b border-white/10 bg-white/5 flex items-center justify-between">
+                  <h2 className="text-2xl font-black text-white uppercase tracking-widest">Case Review</h2>
+                  <button onClick={() => setViewingPrescription(null)} className="p-2 hover:bg-white/10 rounded-xl transition-colors"><X className="w-6 h-6 text-white/40" /></button>
                 </div>
-
-                <div className="p-8 space-y-8 overflow-y-auto flex-1 custom-scrollbar">
-                  <div className="grid grid-cols-2 gap-6">
-                    <div className="glass-card bg-white/5 p-4 rounded-2xl border-white/5">
-                      <p className="text-[0.6rem] font-black text-teal-400 uppercase tracking-widest mb-1">Patient</p>
-                      <p className="font-bold text-white text-lg">
-                        {viewingPrescription.patients?.first_name}{' '}
-                        {viewingPrescription.patients?.last_name}
-                      </p>
-                    </div>
-                    <div className="glass-card bg-white/5 p-4 rounded-2xl border-white/5">
-                      <p className="text-[0.6rem] font-black text-blue-400 uppercase tracking-widest mb-1">Issuer</p>
-                      <p className="font-bold text-white text-lg">
-                        Dr. {viewingPrescription.users?.full_name?.split(' ').pop()}
-                      </p>
-                    </div>
+                
+                <div className="p-10 space-y-8 overflow-y-auto custom-scrollbar">
+                  <div className="p-6 rounded-3xl bg-teal-500/5 border border-teal-500/10">
+                    <p className="text-[0.65rem] font-black text-teal-400 uppercase tracking-widest mb-1">Clinic Identification</p>
+                    <p className="text-white font-black text-2xl tracking-tighter">
+                      {viewingPrescription.patients?.first_name} {viewingPrescription.patients?.last_name}
+                    </p>
+                    <p className="text-white/40 text-[0.65rem] font-black uppercase tracking-widest mt-1">Diagnosis: {viewingPrescription.diagnosis}</p>
                   </div>
 
-                  <div>
-                    <p className="text-[0.6rem] font-black text-white/30 uppercase tracking-[0.2em] mb-2 px-2">Clinical Diagnosis</p>
-                    <div className="p-5 bg-white/5 rounded-2xl border border-white/10">
-                       <p className="text-white font-medium italic">"{viewingPrescription.diagnosis}"</p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-3">
-                    <p className="text-[0.6rem] font-black text-white/30 uppercase tracking-[0.2em] mb-2 px-2">Medications</p>
-                    <div className="space-y-2">
-                      {viewingPrescription.medications?.map((med, index) => (
-                        <div
-                          key={index}
-                          className="p-5 glass-card bg-white/5 rounded-2xl border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all hover:bg-white/10"
-                        >
-                          <p className="font-black text-teal-300 tracking-tight">
-                            {med.medicine_name}
-                          </p>
-                          <div className="flex gap-4 text-[0.65rem] font-black text-white/40 uppercase tracking-widest">
-                            <span className="bg-white/5 px-2 py-1 rounded-md">{med.dosage}</span>
-                            <span className="bg-white/5 px-2 py-1 rounded-md">{med.frequency}</span>
-                            <span className="bg-white/5 px-2 py-1 rounded-md">{med.duration}</span>
-                          </div>
+                  <div className="space-y-4">
+                    <p className="text-[0.65rem] font-black text-white/30 uppercase tracking-widest px-1">Prescribed Regimen</p>
+                    {viewingPrescription.medications?.map((med, i) => (
+                      <div key={i} className="p-5 rounded-2xl bg-white/5 border border-white/5 flex items-center justify-between group">
+                        <p className="font-black text-white text-lg tracking-tight group-hover:text-teal-300 transition-colors uppercase">{med.medicine_name}</p>
+                        <div className="text-[0.6rem] font-black text-white/30 uppercase tracking-widest flex gap-4">
+                          <span>{med.dosage}</span>
+                          <span>{med.frequency}</span>
+                          <span>{med.duration}</span>
                         </div>
-                      ))}
-                    </div>
+                      </div>
+                    ))}
                   </div>
 
-                  {viewingPrescription.instructions && (
-                    <div className="p-5 bg-teal-500/5 rounded-2xl border border-teal-500/10">
-                      <p className="text-[0.6rem] font-black text-teal-400 uppercase tracking-widest mb-2 font-black">Advisory Notes</p>
-                      <p className="text-white/70 text-sm font-medium">
-                        {viewingPrescription.instructions}
-                      </p>
-                    </div>
-                  )}
-
-                  <div className="flex gap-4 pt-4">
-                    <button
-                      onClick={() => handleDownload(viewingPrescription)}
-                      className="flex-1 flex items-center justify-center gap-3 py-4 bg-teal-500 hover:bg-teal-400 text-white rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg shadow-teal-500/20 active:scale-95"
-                    >
-                      <Download className="w-5 h-5" />
-                      Export
-                    </button>
-                    <button
-                      onClick={() => handleWhatsAppShare(viewingPrescription)}
-                      className="flex-1 flex items-center justify-center gap-3 py-4 bg-[#25D366] hover:bg-[#22c15c] text-white rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg shadow-green-500/20 active:scale-95"
-                    >
-                      <MessageCircle className="w-5 h-5" />
-                      Send
-                    </button>
+                  <div className="flex gap-4 pt-6">
+                    <button onClick={() => handleDownload(viewingPrescription)} className="flex-1 py-4 bg-teal-500 hover:bg-teal-400 text-white rounded-2xl font-black text-[0.65rem] uppercase tracking-widest transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"><Download className="w-5 h-5"/> Download PDF</button>
+                    <button onClick={() => handleWhatsApp(viewingPrescription)} className="flex-1 py-4 bg-green-500 hover:bg-green-400 text-white rounded-2xl font-black text-[0.65rem] uppercase tracking-widest transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"><MessageCircle className="w-4 h-4"/> Share WhatsApp</button>
                   </div>
                 </div>
               </div>
