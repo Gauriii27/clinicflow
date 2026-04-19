@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Clock, Users, FileText, Plus, X, Calendar, Building, Pill, Search, Activity } from 'lucide-react';
+import { Users, Clock, Activity, Plus, FileText, Building, X, Search, Pill, Calendar } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
@@ -219,6 +219,7 @@ const DoctorDashboard = () => {
         {[
           { color: 'teal', icon: Plus, title: 'New Patient', desc: 'Register profiles', link: '/doctor/register-patient', label: 'Quick Start' },
           { color: 'blue', icon: FileText, title: 'Medical Records', desc: 'Patient history', link: '/doctor/patient-records', label: 'Search' },
+          { color: 'amber', icon: Pill, title: 'Prescription Vault', desc: 'Archives & issuance', link: '/prescriptions', label: 'Pharmacy' },
           { color: 'orange', icon: Users, title: 'Add to Queue', desc: 'Daily walk-ins', onClick: () => setShowQuickAddModal(true), label: 'Active' },
           { color: 'purple', icon: Building, title: 'External Shifts', desc: 'Off-site logs', link: '/doctor/external-visits', label: 'Travel' },
         ].map((item, idx) => {

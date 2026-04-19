@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Search, Plus, CreditCard as Edit, Trash2, X, Eye, FileText, Calendar, Activity, ChevronRight, User } from 'lucide-react';
+import { Search, Plus, CreditCard as Edit, Trash2, X, Eye, FileText, Calendar, Activity, ChevronRight, User, Pill } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import bgImage from '../assets/medical_bg.png';
 
 const MedicalRecords = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [records, setRecords] = useState([]);
   const [filteredRecords, setFilteredRecords] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -255,6 +257,13 @@ const MedicalRecords = () => {
                         <td className="px-8 py-6">
                           <div className="flex items-center justify-end gap-2">
                             <button
+                              onClick={() => navigate(`/prescriptions?patientId=${record.patient_id}&diagnosis=${encodeURIComponent(record.diagnosis)}`)}
+                              title="Generate Prescription"
+                              className="p-3 bg-teal-500/10 hover:bg-teal-500 text-teal-300 hover:text-white rounded-xl border border-teal-500/20 transition-all group/px"
+                            >
+                              <Pill className="w-4 h-4 opacity-50 group-hover/px:opacity-100" />
+                            </button>
+                            <button
                               onClick={() => { setSelectedRecord(record); setShowModal(true); }}
                               className="p-3 bg-white/5 hover:bg-teal-500 text-white rounded-xl border border-white/5 transition-all group/btn"
                             >
@@ -357,6 +366,22 @@ const MedicalRecords = () => {
                   </div>
                 </div>
               )}
+
+              <div className="pt-8 border-t border-white/10 flex gap-4">
+                <button
+                  onClick={() => navigate(`/prescriptions?patientId=${selectedRecord.patient_id}&diagnosis=${encodeURIComponent(selectedRecord.diagnosis)}`)}
+                  className="flex-1 py-5 bg-teal-500 hover:bg-teal-400 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-teal-500/20 transition-all flex items-center justify-center gap-2"
+                >
+                  <Pill className="w-5 h-5" />
+                  Proceed to Prescription
+                </button>
+                <button
+                  onClick={() => handleDownloadRecord(selectedRecord)}
+                  className="px-10 py-5 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-black text-xs uppercase tracking-widest border border-white/10 transition-all"
+                >
+                  Download Report
+                </button>
+              </div>
             </div>
           </div>
         </div>

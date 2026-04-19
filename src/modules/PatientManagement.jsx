@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Search, Plus, CreditCard as Edit, Trash2, X, User, Mail, Phone, MapPin, Calendar, Activity, ChevronRight, Hash, Hospital } from 'lucide-react';
+import { Search, Plus, CreditCard as Edit, Trash2, X, User, Mail, Phone, MapPin, Calendar, Activity, ChevronRight, Hash, Hospital, Pill } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import bgImage from '../assets/medical_bg.png';
@@ -290,6 +290,13 @@ const PatientManagement = () => {
                           </td>
                           <td className="px-6 py-7 text-right">
                             <div className="flex items-center justify-end gap-3 translate-x-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-0 transition-all">
+                              <button
+                                onClick={() => navigate(`/prescriptions?patientId=${patient.id}`)}
+                                title="Issue Prescription"
+                                className="p-3 bg-teal-500/10 text-teal-300 hover:bg-teal-500 hover:text-white rounded-xl transition-all border border-teal-500/20 active:scale-90"
+                              >
+                                <Pill className="w-5 h-5" />
+                              </button>
                               <button
                                 onClick={() => handleEdit(patient)}
                                 title="Modify Profile"
