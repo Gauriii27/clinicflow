@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { Search, Plus, CreditCard as Edit, Trash2, X, Eye, FileText, Calendar, Activity, ChevronRight, User, Pill } from 'lucide-react';
@@ -9,6 +9,7 @@ import bgImage from '../assets/medical_bg.png';
 const MedicalRecords = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [records, setRecords] = useState([]);
   const [filteredRecords, setFilteredRecords] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -33,6 +34,14 @@ const MedicalRecords = () => {
     fetchRecords();
     fetchPatients();
   }, []);
+
+  useEffect(() => {
+    const pId = searchParams.get('patientId');
+    if (pId) {
+      setNewRecord(prev => ({ ...prev, patient_id: pId }));
+      setShowNewRecordModal(true);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     const filtered = records.filter(record => 

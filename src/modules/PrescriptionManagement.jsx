@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { Search, Plus, Eye, Trash2, X, Download, MessageCircle, FileText, Activity, Pill } from 'lucide-react';
@@ -9,6 +9,7 @@ import bgImage from '../assets/medical_bg.png';
 
 const PrescriptionManagement = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [prescriptions, setPrescriptions] = useState([]);
   const [filteredPrescriptions, setFilteredPrescriptions] = useState([]);
   const [patients, setPatients] = useState([]);
@@ -308,13 +309,22 @@ const PrescriptionManagement = () => {
                             <span className="text-white/30 font-black text-[0.65rem] uppercase tracking-widest">ID:{String(p.id).padStart(4, '0')}</span>
                           </td>
                           <td className="px-8 py-6 text-right">
-                             <button
-                               onClick={() => { setFormData({...formData, patient_id: p.id}); setShowModal(true); }}
-                               className="px-6 py-3 bg-teal-500/10 text-teal-300 hover:bg-teal-500 hover:text-white rounded-xl transition-all border border-teal-500/20 text-[0.65rem] font-black uppercase tracking-widest flex items-center gap-2 ml-auto group/btn"
-                             >
-                               <Pill className="w-4 h-4 group-hover/btn:rotate-12 transition-transform" />
-                               Process Script
-                             </button>
+                             <div className="flex items-center justify-end gap-3">
+                               <button
+                                 onClick={() => navigate(`/medical-records?patientId=${p.id}`)}
+                                 className="px-6 py-3 bg-blue-500/10 text-blue-300 hover:bg-blue-500 hover:text-white rounded-xl transition-all border border-blue-500/20 text-[0.65rem] font-black uppercase tracking-widest flex items-center gap-2 group/btn"
+                               >
+                                 <Activity className="w-4 h-4" />
+                                 Log Symptoms
+                               </button>
+                               <button
+                                 onClick={() => { setFormData({...formData, patient_id: p.id}); setShowModal(true); }}
+                                 className="px-6 py-3 bg-teal-500/10 text-teal-300 hover:bg-teal-500 hover:text-white rounded-xl transition-all border border-teal-500/20 text-[0.65rem] font-black uppercase tracking-widest flex items-center gap-2 group/btn"
+                               >
+                                 <Pill className="w-4 h-4 group-hover/btn:rotate-12 transition-transform" />
+                                 Process Script
+                               </button>
+                             </div>
                           </td>
                         </tr>
                       ))

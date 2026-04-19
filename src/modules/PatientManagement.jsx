@@ -291,6 +291,13 @@ const PatientManagement = () => {
                           <td className="px-6 py-7 text-right">
                             <div className="flex items-center justify-end gap-3 translate-x-4 opacity-0 group-hover:opacity-100 group-hover:translate-x-0 transition-all">
                               <button
+                                onClick={() => navigate(`/medical-records?patientId=${patient.id}`)}
+                                title="Record Clinical Visit"
+                                className="p-3 bg-blue-500/10 text-blue-300 hover:bg-blue-500 hover:text-white rounded-xl transition-all border border-blue-500/20 active:scale-90"
+                              >
+                                <Activity className="w-5 h-5" />
+                              </button>
+                              <button
                                 onClick={() => navigate(`/prescriptions?patientId=${patient.id}`)}
                                 title="Issue Prescription"
                                 className="p-3 bg-teal-500/10 text-teal-300 hover:bg-teal-500 hover:text-white rounded-xl transition-all border border-teal-500/20 active:scale-90"
