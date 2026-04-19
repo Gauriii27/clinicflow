@@ -1,0 +1,149 @@
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import signatureImg from '../assets/signature.png';
+
+export const generatePrescriptionPDF = (prescription, patient) => {
+  const doc = new jsPDF();
+  const pageWidth = doc.internal.pageSize.getWidth();
+  
+  // --- HEADER SECTION ---
+  
+  // Motto: || SHREE DHANWANTARI KRUPA ||
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(10);
+  doc.text('|| SHREE DHANWANTARI KRUPA ||', pageWidth / 2, 12, { align: 'center' });
+  
+  // Mobile Numbers (Top Right)
+  doc.setFontSize(9);
+  doc.text('Mob.: 9987045719', pageWidth - 20, 12, { align: 'right' });
+  doc.text('9987045722', pageWidth - 20, 16, { align: 'right' });
+
+  // Doctor Name (Bold & Large)
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(24);
+  doc.setTextColor(40, 30, 10); // Dark brownish as in pic
+  doc.text('Dr. Eknath Hanumant Yewale', pageWidth / 2, 30, { align: 'center' });
+
+  // Specialization & Reg No
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(0, 0, 0);
+  doc.text('B.A.M.S. (Mumbai), P.G.D.L.M.S. (Mumbai).', pageWidth / 2, 38, { align: 'center' });
+  doc.text('Reg. No. I-38260-A-1', pageWidth / 2, 44, { align: 'center' });
+
+  // Double Divider Line (Top of Address)
+  doc.setDrawColor(120, 100, 70);
+  doc.setLineWidth(0.5);
+  doc.line(15, 52, pageWidth - 15, 52);
+
+  // Address Row
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.text('Dhanwantari Clinic, P.R. Kadam Marg, Asalpha Village, Ghatkopar (W), Mumbai-400084', pageWidth / 2, 58, { align: 'center' });
+
+  // Double Divider Line (Bottom of Address)
+  doc.line(15, 62, pageWidth - 15, 62);
+
+  // --- PATIENT INFO SECTION ---
+  
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.text('Date:', pageWidth - 45, 75);
+  doc.setFont('helvetica', 'normal');
+  doc.text(new Date().toLocaleDateString('en-IN'), pageWidth - 32, 75);
+
+  doc.setFont('helvetica', 'bold');
+  doc.text('Patient Name:', 15, 85);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`${patient.first_name || 'Rahul'} ${patient.last_name || 'Unknown'}`, 45, 85);
+
+  doc.setFont('helvetica', 'bold');
+  doc.text('Age / Sex:', 15, 93);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`${calculateAge(patient.date_of_birth)} / ${patient.gender?.toUpperCase() || '--'}`, 45, 93);
+
+  doc.setFont('helvetica', 'bold');
+  doc.text('Diagnosis:', 15, 101);
+  doc.setFont('helvetica', 'normal');
+  doc.text(prescription.diagnosis || 'General Checkup', 45, 101);
+
+  // Rx Symbol
+  doc.setFont('times', 'italic');
+  doc.setFontSize(22);
+  doc.text('Rx', 15, 115);
+
+  // --- MEDICATIONS TABLE ---
+  
+  const tableRows = (prescription.medications || []).map((med, index) => [
+    index + 1,
+    med.medicine_name || med.name,
+    med.dosage,
+    med.frequency,
+    med.duration
+  ]);
+
+  autoTable(doc, {
+    startY: 120,
+    head: [['#', 'Medicine Name', 'Dosage', 'Frequency', 'Duration']],
+    body: tableRows,
+    theme: 'striped',
+    headStyles: { fillColor: [21, 128, 61], textColor: [255, 255, 255], fontStyle: 'bold' },
+    styles: { fontSize: 10, cellPadding: 5 },
+    columnStyles: {
+      0: { cellWidth: 10 },
+      1: { cellWidth: 'auto', fontStyle: 'bold' }
+    }
+  });
+
+  // --- FOOTER SECTION ---
+  
+  const finalY = doc.lastAutoTable.finalY || 150;
+
+  if (prescription.instructions) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.text('Instructions:', 15, finalY + 15);
+    doc.setFont('helvetica', 'normal');
+    const splitInstructions = doc.splitTextToSize(prescription.instructions, pageWidth - 30);
+    doc.text(splitInstructions, 15, finalY + 22);
+  }
+
+  // Signature Area
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  
+  // Draw Signature Image
+  try {
+    doc.addImage(signatureImg, 'PNG', pageWidth - 55, finalY + 25, 35, 20);
+  } catch (err) {
+    console.error('Error adding signature image:', err);
+  }
+
+  doc.text('Doctor\'s Signature', pageWidth - 15, finalY + 50, { align: 'right' });
+  doc.setLineWidth(0.2);
+  doc.line(pageWidth - 60, finalY + 45, pageWidth - 15, finalY + 45);
+
+  // Return as Blob or Save
+  return doc;
+};
+
+// Helper to calculate age
+const calculateAge = (dob) => {
+  if (!dob) return '--';
+  const birthYear = new Date(dob).getFullYear();
+  const currentYear = new Date().getFullYear();
+  return `${currentYear - birthYear} Yrs`;
+};
+
+export const shareViaWhatsApp = (prescription, patient) => {
+  const patientName = `${patient.first_name} ${patient.last_name}`;
+  const medsSummary = (prescription.medications || [])
+    .map(m => `• ${m.medicine_name || m.name}: ${m.dosage} (${m.frequency})`)
+    .join('%0A');
+    
+  const message = `*Dhanwantari Clinic - Digital Prescription*%0A%0A*Patient:* ${patientName}%0A*Date:* ${new Date().toLocaleDateString()}%0A%0A*Medicines:*%0A${medsSummary}%0A%0A*Instructions:* ${prescription.instructions || 'N/A'}%0A%0APlease download your full PDF prescription from the portal.`;
+  
+  const phone = patient.phone ? patient.phone.replace(/\D/g, '') : '';
+  const url = `https://wa.me/${phone.length === 10 ? '91'+phone : phone}?text=${message}`;
+  window.open(url, '_blank');
+};
