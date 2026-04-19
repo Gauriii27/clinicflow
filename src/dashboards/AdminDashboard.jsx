@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Users, UserCog, Calendar, Activity, Database, Server } from 'lucide-react';
+import { Users, UserCog, Calendar, Activity, Database, Server, Settings, ShieldCheck } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import bgImage from '../assets/medical_bg.png';
 
 const AdminDashboard = () => {
   const [stats, setStats] = useState({
@@ -10,11 +11,7 @@ const AdminDashboard = () => {
     systemStatus: 'Active',
   });
 
-  useEffect(() => {
-    fetchStats();
-  }, []);
-
-  const fetchStats = async () => {
+  async function fetchStats() {
     try {
       const { count: patientCount } = await supabase
         .from('patients')
@@ -30,104 +27,97 @@ const AdminDashboard = () => {
         .select('*', { count: 'exact', head: true });
 
       setStats({
-        totalPatients: patientCount || 142,
-        totalDoctors: doctorCount || 14,
-        totalAppointments: appointmentCount || 345,
-        systemStatus: 'Active',
+        totalPatients: patientCount || 0,
+        totalDoctors: doctorCount || 0,
+        totalAppointments: appointmentCount || 0,
+        systemStatus: 'Optimal',
       });
     } catch (error) {
       console.error('Error fetching stats:', error);
     }
-  };
+  }
+
+  useEffect(() => {
+    fetchStats();
+  }, []);
 
   return (
-    <div className="w-full">
-      {/* Greetings Header */}
-      <div className="mb-10 mt-4">
-        <h1 className="text-[2.2rem] font-bold text-[#1f2937]">System Administration</h1>
-        <p className="text-[#6b7280] text-[1.1rem]">System overview, platform health, and holistic clinic management</p>
+    <div className="relative min-h-screen font-['Outfit']">
+      {/* Dynamic Background */}
+      <div className="fixed inset-0 z-0 bg-cover bg-center opacity-30 mix-blend-overlay scale-110 pointer-events-none" 
+           style={{ backgroundImage: `url(${bgImage})` }} />
+      
+      {/* Floating Bubbles */}
+      <div className="fixed inset-0 z-0 pointer-events-none">
+        <div className="absolute top-[30%] right-[5%] w-80 h-80 rounded-full bg-blue-500/10 blur-3xl animate-float" />
+        <div className="absolute bottom-[20%] left-[10%] w-64 h-64 rounded-full bg-purple-500/10 blur-3xl animate-float-delayed" />
       </div>
 
-      {/* Stats row */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
-        
-        {/* Total Patients */}
-        <div className="bg-white rounded-[20px] shadow-sm p-6 border border-gray-100 flex items-center justify-between transition-all hover:shadow-md">
-          <div>
-            <p className="text-[#6b7280] text-sm font-medium mb-2">Total Patients</p>
-            <p className="text-[2.2rem] font-bold text-[#3b82f6] leading-none">{stats.totalPatients}</p>
-          </div>
-          <div className="flex items-center justify-center bg-[#eff6ff] p-3 rounded-xl">
-            <Users className="text-[#3b82f6] w-[1.8rem] h-[1.8rem]" strokeWidth={2} />
-          </div>
+      <div className="relative z-10 w-full space-y-10 animate-fade-in">
+        {/* Greetings Header */}
+        <div className="mb-10 mt-2">
+          <h1 className="text-[2.6rem] font-bold text-white tracking-tight drop-shadow-md">
+            System <span className="text-blue-400">Administration</span>
+          </h1>
+          <p className="text-teal-50/60 text-[1.1rem] font-medium max-w-2xl mt-1">
+            Global system health and platform oversight.
+          </p>
         </div>
 
-        {/* Total Doctors */}
-        <div className="bg-white rounded-[20px] shadow-sm p-6 border border-gray-100 flex items-center justify-between transition-all hover:shadow-md">
-          <div>
-            <p className="text-[#6b7280] text-sm font-medium mb-2">Total Doctors</p>
-            <p className="text-[2.2rem] font-bold text-[#16a34a] leading-none">{stats.totalDoctors}</p>
-          </div>
-          <div className="flex items-center justify-center bg-[#f0fdf4] p-3 rounded-xl">
-            <UserCog className="text-[#16a34a] w-[1.8rem] h-[1.8rem]" strokeWidth={2} />
-          </div>
+        {/* Stats row */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-10">
+          {[
+            { label: 'Total Patients', val: stats.totalPatients, icon: Users, color: 'blue' },
+            { label: 'Total Doctors', val: stats.totalDoctors, icon: UserCog, color: 'teal' },
+            { label: 'Total Visits', val: stats.totalAppointments, icon: Calendar, color: 'purple' },
+            { label: 'System Guard', val: stats.systemStatus, icon: ShieldCheck, color: 'orange' },
+          ].map((item, idx) => (
+            <div key={idx} className="glass-card rounded-[2rem] p-8 border-white/5 hover:bg-white/5 transition-all group overflow-hidden">
+               <div className="flex items-center justify-between mb-4">
+                  <div className={`w-12 h-12 rounded-xl bg-${item.color}-500/20 flex items-center justify-center border border-${item.color}-500/30`}>
+                    <item.icon className="w-6 h-6 text-white" />
+                  </div>
+                  <span className="text-[0.6rem] font-black uppercase tracking-widest text-white/30">Live Data</span>
+               </div>
+               <p className="text-[2.8rem] font-black text-white leading-none tracking-tighter mb-1">{item.val}</p>
+               <p className="text-white/50 text-[0.7rem] font-black uppercase tracking-widest">{item.label}</p>
+            </div>
+          ))}
         </div>
 
-        {/* Total Appointments */}
-        <div className="bg-white rounded-[20px] shadow-sm p-6 border border-gray-100 flex items-center justify-between transition-all hover:shadow-md">
-          <div>
-            <p className="text-[#6b7280] text-sm font-medium mb-2">Appointments</p>
-            <p className="text-[2.2rem] font-bold text-[#8b5cf6] leading-none">{stats.totalAppointments}</p>
+        {/* System Infrastructure Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="glass-card bg-gradient-to-br from-blue-900/40 to-indigo-900/40 rounded-[2.5rem] p-10 border-white/5 relative overflow-hidden group">
+            <div className="absolute top-0 right-0 p-10 opacity-10 group-hover:opacity-20 transition-opacity">
+               <Database className="text-white w-40 h-40" strokeWidth={1} />
+            </div>
+            <div className="bg-white/10 w-16 h-16 rounded-2xl flex items-center justify-center mb-8 backdrop-blur-md border border-white/10">
+              <Server className="text-white w-8 h-8" />
+            </div>
+            <h2 className="text-white text-3xl font-black mb-2 tracking-tight">Platform Core</h2>
+            <p className="text-blue-100/60 font-medium text-lg leading-relaxed max-w-sm">All systems operations are nominal. Real-time data synchronization is active with 99.9% health.</p>
           </div>
-          <div className="flex items-center justify-center bg-[#f5f3ff] p-3 rounded-xl">
-            <Calendar className="text-[#8b5cf6] w-[1.8rem] h-[1.8rem]" strokeWidth={2} />
+          
+          <div className="glass-card rounded-[2.5rem] p-10 border-white/5">
+             <h2 className="text-2xl font-black text-white mb-8 flex items-center gap-3 uppercase tracking-tighter italic">
+               <Activity className="text-teal-400" /> Infrastructure Metrics
+             </h2>
+             <div className="space-y-6">
+                {[
+                  { label: 'Database Integrity', status: 'Healthy', val: '99.9%', color: 'teal' },
+                  { label: 'Active Sessions', status: 'Live', val: '24 Nodes', color: 'blue' },
+                  { label: 'Cloud Storage', status: 'Active', val: '15% LOAD', color: 'purple' },
+                ].map((m, i) => (
+                  <div key={i} className="flex justify-between items-center bg-white/5 p-6 rounded-2xl border border-white/5">
+                     <span className="font-bold text-white/70 text-sm tracking-tight">{m.label}</span>
+                     <div className="flex items-center gap-4">
+                        <span className="text-white font-black text-xs uppercase tracking-widest">{m.val}</span>
+                        <span className={`text-${m.color}-400 font-bold bg-${m.color}-500/10 px-4 py-1 rounded-full text-[0.6rem] uppercase tracking-widest border border-${m.color}-500/20`}>{m.status}</span>
+                     </div>
+                  </div>
+                ))}
+             </div>
           </div>
-        </div>
-
-        {/* System Health */}
-        <div className="bg-white rounded-[20px] shadow-sm p-6 border border-gray-100 flex items-center justify-between transition-all hover:shadow-md">
-          <div>
-            <p className="text-[#6b7280] text-sm font-medium mb-2">Status</p>
-            <p className="text-[1.8rem] font-bold text-[#f59e0b] leading-none">{stats.systemStatus}</p>
-          </div>
-          <div className="flex items-center justify-center bg-[#fffbeb] p-3 rounded-xl">
-            <Activity className="text-[#f59e0b] w-[1.8rem] h-[1.8rem]" strokeWidth={2} />
-          </div>
-        </div>
-
-      </div>
-
-      {/* System Infrastructure Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-gradient-to-br from-[#1e1b4b] to-[#312e81] rounded-[24px] shadow-lg p-8 relative overflow-hidden block text-left">
-          <div className="absolute top-0 right-0 p-8 opacity-20">
-             <Database className="text-white w-32 h-32" />
-          </div>
-          <div className="bg-white/20 w-14 h-14 rounded-xl flex items-center justify-center mb-6 backdrop-blur-md">
-            <Server className="text-white w-8 h-8" />
-          </div>
-          <h2 className="text-white text-2xl font-bold mb-2">Platform Hub</h2>
-          <p className="text-[#c7d2fe] font-medium text-sm">All systems are running effectively with 99.9% uptime. Database connections are secure.</p>
-        </div>
-        
-        <div className="bg-white rounded-[24px] shadow-sm p-8 border border-gray-100">
-           <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-             <Activity className="text-[#16a34a]" /> Activity Metrics
-           </h2>
-           <div className="space-y-4">
-              <div className="flex justify-between items-center bg-[#f9fafb] p-4 rounded-xl">
-                 <span className="font-semibold text-gray-700">Database Uptime</span>
-                 <span className="text-[#16a34a] font-bold bg-[#dcfce7] px-3 py-1 rounded-full text-xs">99.98%</span>
-              </div>
-              <div className="flex justify-between items-center bg-[#f9fafb] p-4 rounded-xl">
-                 <span className="font-semibold text-gray-700">Active Sessions</span>
-                 <span className="text-[#3b82f6] font-bold bg-[#dbeafe] px-3 py-1 rounded-full text-xs">24 Active</span>
-              </div>
-              <div className="flex justify-between items-center bg-[#f9fafb] p-4 rounded-xl">
-                 <span className="font-semibold text-gray-700">Storage Usage</span>
-                 <span className="text-[#8b5cf6] font-bold bg-[#ede9fe] px-3 py-1 rounded-full text-xs">15% Used</span>
-              </div>
-           </div>
         </div>
       </div>
     </div>

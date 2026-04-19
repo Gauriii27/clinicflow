@@ -140,7 +140,18 @@ const DoctorDashboard = () => {
   }, [user, showQuickAddModal]);
 
   return (
-    <div className="w-full space-y-10 animate-fade-in">
+    <div className="relative min-h-screen">
+      {/* Dynamic Background */}
+      <div className="fixed inset-0 z-0 bg-cover bg-center opacity-30 mix-blend-overlay scale-110 pointer-events-none" 
+           style={{ backgroundImage: `url('/src/assets/medical_bg.png')` }} />
+      
+      {/* Floating Bubbles */}
+      <div className="fixed inset-0 z-0 pointer-events-none">
+        <div className="absolute top-[10%] left-[-5%] w-96 h-96 rounded-full bg-teal-500/10 blur-3xl animate-float" />
+        <div className="absolute bottom-[20%] right-[-5%] w-80 h-80 rounded-full bg-blue-500/10 blur-3xl animate-float-delayed" />
+      </div>
+
+      <div className="relative z-10 w-full space-y-10 animate-fade-in">
       {/* Greetings Header */}
       <div className="mb-8 mt-2 relative">
         <h1 className="text-[2.6rem] font-bold text-white tracking-tight drop-shadow-md">
