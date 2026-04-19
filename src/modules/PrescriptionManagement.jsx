@@ -192,9 +192,9 @@ const PrescriptionManagement = () => {
 
   useEffect(() => {
     const filtered = prescriptions.filter(px =>
-      px.patients?.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      px.patients?.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      px.diagnosis?.toLowerCase().includes(searchTerm.toLowerCase())
+      px.patients?.first_name?.toLowerCase()?.includes(searchTerm.toLowerCase()) ||
+      px.patients?.last_name?.toLowerCase()?.includes(searchTerm.toLowerCase()) ||
+      px.diagnosis?.toLowerCase()?.includes(searchTerm.toLowerCase())
     );
     setFilteredPrescriptions(filtered);
   }, [searchTerm, prescriptions]);

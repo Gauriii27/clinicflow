@@ -36,9 +36,9 @@ const MedicalRecords = () => {
 
   useEffect(() => {
     const filtered = records.filter(record => 
-      record.patients?.first_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      record.patients?.last_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      record.diagnosis?.toLowerCase().includes(searchQuery.toLowerCase())
+      record.patients?.first_name?.toLowerCase()?.includes(searchQuery.toLowerCase()) ||
+      record.patients?.last_name?.toLowerCase()?.includes(searchQuery.toLowerCase()) ||
+      record.diagnosis?.toLowerCase()?.includes(searchQuery.toLowerCase())
     );
     setFilteredRecords(filtered);
   }, [searchQuery, records]);

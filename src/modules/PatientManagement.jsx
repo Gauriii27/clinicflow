@@ -38,8 +38,8 @@ const PatientManagement = () => {
   useEffect(() => {
     const filtered = patients.filter(
       (patient) =>
-        patient.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        patient.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        patient.first_name?.toLowerCase()?.includes(searchTerm.toLowerCase()) ||
+        patient.last_name?.toLowerCase()?.includes(searchTerm.toLowerCase()) ||
         patient.phone?.includes(searchTerm) ||
         patient.id?.toString().includes(searchTerm)
     );
