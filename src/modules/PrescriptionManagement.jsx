@@ -12,7 +12,9 @@ const PrescriptionManagement = () => {
   const [prescriptions, setPrescriptions] = useState([]);
   const [filteredPrescriptions, setFilteredPrescriptions] = useState([]);
   const [patients, setPatients] = useState([]);
+  const [filteredPatients, setFilteredPatients] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [activeTab, setActiveTab] = useState('registry'); // 'registry' or 'archives'
   const [showModal, setShowModal] = useState(false);
   const [viewingPrescription, setViewingPrescription] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -186,18 +188,30 @@ const PrescriptionManagement = () => {
     const diag = searchParams.get('diagnosis');
     if (pId) {
       setFormData(prev => ({ ...prev, patient_id: pId, diagnosis: diag || '' }));
+      setActiveTab('registry'); // Stay on registry to see patient list
       setShowModal(true);
     }
   }, [searchParams]);
 
   useEffect(() => {
-    const filtered = prescriptions.filter(px =>
-      px.patients?.first_name?.toLowerCase()?.includes(searchTerm.toLowerCase()) ||
-      px.patients?.last_name?.toLowerCase()?.includes(searchTerm.toLowerCase()) ||
-      px.diagnosis?.toLowerCase()?.includes(searchTerm.toLowerCase())
+    const term = searchTerm.toLowerCase();
+    
+    // Filter Prescriptions
+    const filteredPx = prescriptions.filter(px =>
+      px.patients?.first_name?.toLowerCase()?.includes(term) ||
+      px.patients?.last_name?.toLowerCase()?.includes(term) ||
+      px.diagnosis?.toLowerCase()?.includes(term)
     );
-    setFilteredPrescriptions(filtered);
-  }, [searchTerm, prescriptions]);
+    setFilteredPrescriptions(filteredPx);
+
+    // Filter Patients
+    const filteredPat = patients.filter(p =>
+      p.first_name?.toLowerCase()?.includes(term) ||
+      p.last_name?.toLowerCase()?.includes(term) ||
+      p.phone?.includes(term)
+    );
+    setFilteredPatients(filteredPat);
+  }, [searchTerm, prescriptions, patients]);
 
   return (
     <div className="min-h-screen relative overflow-hidden bg-slate-900 font-['Outfit']">
@@ -214,35 +228,108 @@ const PrescriptionManagement = () => {
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div>
               <h1 className="text-[2.6rem] font-bold text-white tracking-tight drop-shadow-md">
-                Prescription <span className="text-teal-300">Vault</span>
+                Clinical <span className="text-teal-300">Prescriptions</span>
               </h1>
-              <p className="text-teal-50/60 text-[1.1rem] font-medium mt-1">Clinical archives and medication issuance.</p>
+              <p className="text-teal-50/60 text-[1.1rem] font-medium mt-1">Select a member to issue a new digital script.</p>
             </div>
-            <button
-              onClick={() => { resetForm(); setShowModal(true); }}
-              className="flex items-center gap-3 px-8 py-4 bg-teal-500 hover:bg-teal-400 text-white rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg active:scale-95 group"
-            >
-              <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform" />
-              Issue New Script
-            </button>
+            <div className="flex bg-white/5 p-1.5 rounded-2xl border border-white/10 backdrop-blur-xl">
+              <button 
+                onClick={() => setActiveTab('registry')}
+                className={`px-8 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'registry' ? 'bg-teal-500 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
+              >
+                Member Registry
+              </button>
+              <button 
+                onClick={() => setActiveTab('archives')}
+                className={`px-8 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${activeTab === 'archives' ? 'bg-teal-500 text-white shadow-lg' : 'text-white/40 hover:text-white'}`}
+              >
+                Script Archives
+              </button>
+            </div>
           </div>
 
           <div className="glass-card rounded-[2.5rem] overflow-hidden border-white/10 shadow-2xl">
-            <div className="p-6 border-b border-white/10 bg-white/5">
-              <div className="relative group max-w-md">
+            <div className="p-6 border-b border-white/10 bg-white/5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="relative group max-w-md w-full">
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30 w-5 h-5" />
                 <input
                   type="text"
-                  placeholder="SEARCH ARCHIVES..."
+                  placeholder={activeTab === 'registry' ? "LOCATE MEMBER..." : "SEARCH ARCHIVES..."}
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full pl-12 pr-6 py-4 bg-white/5 border border-white/10 rounded-2xl focus:outline-none focus:ring-4 focus:ring-teal-500/10 text-white font-black text-xs uppercase tracking-widest placeholder:text-white/20"
                 />
               </div>
+              {activeTab === 'archives' && (
+                <button
+                  onClick={() => { resetForm(); setActiveTab('registry'); }}
+                  className="flex items-center gap-2 px-6 py-3 bg-white/5 hover:bg-teal-500 text-white rounded-xl transition-all border border-white/10 text-[0.6rem] font-black uppercase tracking-widest"
+                >
+                  <Plus className="w-4 h-4" /> Issue New Script
+                </button>
+              )}
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full">
+              {activeTab === 'registry' ? (
+                <table className="w-full">
+                  <thead>
+                    <tr className="bg-white/5">
+                      <th className="px-8 py-5 text-left text-[0.65rem] font-black text-white/40 uppercase tracking-widest">Full Name</th>
+                      <th className="px-8 py-5 text-left text-[0.65rem] font-black text-white/40 uppercase tracking-widest">Vitals Summary</th>
+                      <th className="px-8 py-5 text-left text-[0.65rem] font-black text-white/40 uppercase tracking-widest">Identifier</th>
+                      <th className="px-8 py-5 text-right text-[0.65rem] font-black text-white/40 uppercase tracking-widest">Quick Start</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {filteredPatients.length > 0 ? (
+                      filteredPatients.map((p) => (
+                        <tr key={p.id} className="group hover:bg-white/5 transition-all">
+                          <td className="px-8 py-6">
+                            <div className="flex items-center gap-4">
+                              <div className="w-11 h-11 rounded-1.5xl bg-teal-500/10 text-teal-300 font-black text-lg flex items-center justify-center border border-teal-500/20 group-hover:scale-110 transition-transform">
+                                {p.first_name?.[0]}
+                              </div>
+                              <div>
+                                <p className="text-white font-black text-lg tracking-tight group-hover:text-teal-300 transition-colors">{p.first_name} {p.last_name}</p>
+                                <p className="text-white/20 text-[0.6rem] font-bold uppercase tracking-widest">{p.phone || 'NO PHONE'}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-8 py-6">
+                            <div className="flex gap-2">
+                              <span className="px-3 py-1 bg-white/5 rounded-lg text-white/40 text-[0.55rem] font-black uppercase tracking-widest border border-white/5">{p.gender}</span>
+                              <span className="px-3 py-1 bg-white/5 rounded-lg text-white/40 text-[0.55rem] font-black uppercase tracking-widest border border-white/5">
+                                {p.date_of_birth ? `${new Date().getFullYear() - new Date(p.date_of_birth).getFullYear()}YRS` : '--'}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-8 py-6">
+                            <span className="text-white/30 font-black text-[0.65rem] uppercase tracking-widest">ID:{String(p.id).padStart(4, '0')}</span>
+                          </td>
+                          <td className="px-8 py-6 text-right">
+                             <button
+                               onClick={() => { setFormData({...formData, patient_id: p.id}); setShowModal(true); }}
+                               className="px-6 py-3 bg-teal-500/10 text-teal-300 hover:bg-teal-500 hover:text-white rounded-xl transition-all border border-teal-500/20 text-[0.65rem] font-black uppercase tracking-widest flex items-center gap-2 ml-auto group/btn"
+                             >
+                               <Pill className="w-4 h-4 group-hover/btn:rotate-12 transition-transform" />
+                               Process Script
+                             </button>
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="4" className="px-8 py-20 text-center opacity-30">
+                          <Search className="w-16 h-16 mx-auto mb-4" strokeWidth={1} />
+                          <p className="font-black text-xs uppercase tracking-widest">No matching members in registry</p>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              ) : (
+                <table className="w-full">
                 <thead>
                   <tr className="bg-white/5">
                     <th className="px-8 py-5 text-left text-[0.65rem] font-black text-white/40 uppercase tracking-widest">Member</th>

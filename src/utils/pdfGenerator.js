@@ -9,19 +9,23 @@ export const generatePrescriptionPDF = (prescription, patient) => {
   // --- HEADER SECTION ---
   
   // Motto: || SHREE DHANWANTARI KRUPA ||
-  doc.setFont('helvetica', 'normal');
+  doc.setFont('times', 'bolditalic');
+  doc.setDrawColor(21, 128, 61); // Teal color matching theme
   doc.setFontSize(10);
+  doc.setTextColor(21, 128, 61);
   doc.text('|| SHREE DHANWANTARI KRUPA ||', pageWidth / 2, 12, { align: 'center' });
   
   // Mobile Numbers (Top Right)
+  doc.setTextColor(0, 0, 0);
+  doc.setFont('helvetica', 'normal');
   doc.setFontSize(9);
-  doc.text('Mob.: 9987045719', pageWidth - 20, 12, { align: 'right' });
-  doc.text('9987045722', pageWidth - 20, 16, { align: 'right' });
+  doc.text('Mob.: 9987045719', pageWidth - 15, 12, { align: 'right' });
+  doc.text('9987045722', pageWidth - 15, 16, { align: 'right' });
 
   // Doctor Name (Bold & Large)
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(24);
-  doc.setTextColor(40, 30, 10); // Dark brownish as in pic
+  doc.setTextColor(30, 60, 120); // Deep Royal Blue for name
   doc.text('Dr. Eknath Hanumant Yewale', pageWidth / 2, 30, { align: 'center' });
 
   // Specialization & Reg No
