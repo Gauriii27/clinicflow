@@ -1,18 +1,22 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
-import { Search, Plus, CreditCard as Edit, Trash2, X, Calendar, Clock, User, ChevronRight } from 'lucide-react';
+import { Search, Plus, CreditCard as Edit, Trash2, X, Calendar, Clock, User, ChevronRight, Stethoscope } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import Navbar from '../components/Navbar';
 import bgImage from '../assets/medical_bg.png';
 
 const AppointmentManagement = () => {
   const [appointments, setAppointments] = useState([]);
-  const [filteredAppointments, setFilteredAppointments] = useState([]);
   const [patients, setPatients] = useState([]);
   const [doctors, setDoctors] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [editingAppointment, setEditingAppointment] = useState(null);
   const [loading, setLoading] = useState(false);
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [showOnlyMyAppointments, setShowOnlyMyAppointments] = useState(user?.role === 'doctor');
 
   const [formData, setFormData] = useState({
     patient_id: '',
@@ -23,43 +27,57 @@ const AppointmentManagement = () => {
     status: 'scheduled',
   });
 
+  // Pre-select current doctor when opening modal for a new assignment
+  useEffect(() => {
+    if (showModal && !editingAppointment && user?.role === 'doctor') {
+      setFormData(prev => ({ ...prev, doctor_id: user.id }));
+    }
+  }, [showModal, editingAppointment, user]);
+
   useEffect(() => {
     fetchAppointments();
     fetchPatients();
     fetchDoctors();
   }, []);
 
-  useEffect(() => {
-    const filtered = appointments.filter(
-      (appointment) =>
-        appointment.patients?.first_name
-          ?.toLowerCase()
-          .includes(searchTerm.toLowerCase()) ||
-        appointment.patients?.last_name
-          ?.toLowerCase()
-          .includes(searchTerm.toLowerCase()) ||
-        appointment.users?.full_name
-          ?.toLowerCase()
-          .includes(searchTerm.toLowerCase())
+  // Reactive Data Merging & Filtering
+  const processedAppointments = useMemo(() => {
+    // 1. First, enrich the appointments with names from state
+    const enriched = appointments.map(apt => {
+      const patient = patients.find(p => p.id === apt.patient_id);
+      const doctor = doctors.find(d => d.id === apt.doctor_id);
+      return {
+        ...apt,
+        patients: patient ? { first_name: patient.first_name, last_name: patient.last_name } : null,
+        users: doctor ? { full_name: doctor.full_name } : null
+      };
+    });
+
+    // 2. Filter by search term
+    let filtered = enriched.filter(apt =>
+      apt.patients?.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      apt.patients?.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      apt.users?.full_name?.toLowerCase().includes(searchTerm.toLowerCase())
     );
-    setFilteredAppointments(filtered);
-  }, [searchTerm, appointments]);
+
+    // 3. Filter by Doctor ownership
+    if (showOnlyMyAppointments && user?.role === 'doctor') {
+      filtered = filtered.filter(a => a.doctor_id === user.id);
+    }
+
+    return filtered;
+  }, [appointments, patients, doctors, searchTerm, showOnlyMyAppointments, user]);
 
   const fetchAppointments = async () => {
     try {
       const { data, error } = await supabase
         .from('appointments')
-        .select(`
-          *,
-          patients (first_name, last_name),
-          users!appointments_doctor_id_fkey (full_name)
-        `)
+        .select('*')
         .order('appointment_date', { ascending: false })
         .order('appointment_time', { ascending: true });
 
       if (error) throw error;
       setAppointments(data || []);
-      setFilteredAppointments(data || []);
     } catch (error) {
       console.error('Error fetching appointments:', error);
     }
@@ -115,9 +133,10 @@ const AppointmentManagement = () => {
       fetchAppointments();
       resetForm();
       setShowModal(false);
+      alert(editingAppointment ? 'Sequence revised successfully.' : 'Encounter booked successfully!');
     } catch (error) {
       console.error('Error saving appointment:', error);
-      alert('Failed to save appointment');
+      alert('System Block: ' + (error.message || 'Failed to sync with clinical record.'));
     } finally {
       setLoading(false);
     }
@@ -231,6 +250,23 @@ const AppointmentManagement = () => {
                   className="w-full pl-14 pr-6 py-5 bg-white/5 border border-white/10 rounded-[1.8rem] focus:outline-none focus:ring-4 focus:ring-teal-500/10 focus:bg-white/10 transition-all text-white font-bold text-lg placeholder:text-white/10"
                 />
               </div>
+
+              {user?.role === 'doctor' && (
+                <div className="flex items-center gap-3 bg-white/5 p-2 rounded-2xl border border-white/5 shrink-0">
+                  <button 
+                    onClick={() => setShowOnlyMyAppointments(true)}
+                    className={`px-5 py-3 rounded-xl text-[0.65rem] font-black uppercase tracking-widest transition-all ${showOnlyMyAppointments ? 'bg-teal-500 text-white shadow-lg shadow-teal-500/20' : 'text-white/30 hover:text-white'}`}
+                  >
+                    My Schedule
+                  </button>
+                  <button 
+                    onClick={() => setShowOnlyMyAppointments(false)}
+                    className={`px-5 py-3 rounded-xl text-[0.65rem] font-black uppercase tracking-widest transition-all ${!showOnlyMyAppointments ? 'bg-white/10 text-white shadow-lg' : 'text-white/30 hover:text-white'}`}
+                  >
+                    All Doctors
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="overflow-x-auto custom-scrollbar px-2 pb-4">
@@ -245,8 +281,8 @@ const AppointmentManagement = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {filteredAppointments.length > 0 ? (
-                    filteredAppointments.map((appointment) => (
+                  {processedAppointments.length > 0 ? (
+                    processedAppointments.map((appointment) => (
                       <tr key={appointment.id} className="group hover:bg-white/5 transition-all">
                         <td className="px-6 py-7">
                           <div className="flex items-center gap-4">
@@ -287,6 +323,18 @@ const AppointmentManagement = () => {
                         </td>
                         <td className="px-6 py-7 text-right">
                           <div className="flex items-center justify-end gap-3 translate-x-2 opacity-0 group-hover:opacity-100 group-hover:translate-x-0 transition-all">
+                            {user?.role === 'doctor' && appointment.doctor_id === user.id && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigate(`/prescriptions?patientId=${appointment.patient_id}&diagnosis=${encodeURIComponent(appointment.reason || '')}`);
+                                }}
+                                className="flex items-center gap-2 pr-5 pl-4 py-3 bg-teal-500 text-white rounded-xl font-black text-[0.65rem] uppercase tracking-widest hover:bg-teal-400 transition-all shadow-lg shadow-teal-500/20 active:scale-95"
+                              >
+                                <Stethoscope className="w-4 h-4" />
+                                Treat
+                              </button>
+                            )}
                             <button
                               onClick={() => handleEdit(appointment)}
                               className="p-3 bg-white/5 hover:bg-blue-500/20 text-white/40 hover:text-blue-400 rounded-xl transition-all border border-white/10"
@@ -352,12 +400,21 @@ const AppointmentManagement = () => {
                         className="w-full px-5 py-4 bg-white/5 border border-white/10 rounded-2xl focus:outline-none focus:ring-4 focus:ring-teal-500/10 focus:bg-white/10 transition-all text-white font-bold"
                       >
                         <option value="" className="bg-slate-900">Select Member</option>
-                        {patients.map((patient) => (
-                          <option key={patient.id} value={patient.id} className="bg-slate-900 text-white">
-                            {patient.first_name} {patient.last_name}
-                          </option>
-                        ))}
+                        {patients.length > 0 ? (
+                          patients.map((patient) => (
+                            <option key={patient.id} value={patient.id} className="bg-slate-900 text-white">
+                              {patient.first_name} {patient.last_name}
+                            </option>
+                          ))
+                        ) : (
+                          <option disabled className="bg-slate-900 text-white/30">No members found</option>
+                        )}
                       </select>
+                      {patients.length === 0 && (
+                        <p className="text-[0.6rem] text-amber-400 font-bold mt-2">
+                          No members registered. <Link to="/doctor/register-patient" className="underline hover:text-amber-300">Register a member first</Link>
+                        </p>
+                      )}
                     </div>
 
                     <div className="space-y-2">

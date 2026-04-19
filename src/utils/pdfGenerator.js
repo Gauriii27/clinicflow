@@ -5,16 +5,16 @@ import signatureImg from '../assets/signature.png';
 export const generatePrescriptionPDF = (prescription, patient) => {
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
-  
+
   // --- HEADER SECTION ---
-  
+
   // Motto: || SHREE DHANWANTARI KRUPA ||
   doc.setFont('times', 'bolditalic');
   doc.setDrawColor(21, 128, 61); // Teal color matching theme
   doc.setFontSize(10);
   doc.setTextColor(21, 128, 61);
   doc.text('|| SHREE DHANWANTARI KRUPA ||', pageWidth / 2, 12, { align: 'center' });
-  
+
   // Mobile Numbers (Top Right)
   doc.setTextColor(0, 0, 0);
   doc.setFont('helvetica', 'normal');
@@ -49,7 +49,7 @@ export const generatePrescriptionPDF = (prescription, patient) => {
   doc.line(15, 62, pageWidth - 15, 62);
 
   // --- PATIENT INFO SECTION ---
-  
+
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
   doc.text('Date:', pageWidth - 45, 75);
@@ -77,7 +77,7 @@ export const generatePrescriptionPDF = (prescription, patient) => {
   doc.text('Rx', 15, 115);
 
   // --- MEDICATIONS TABLE ---
-  
+
   const tableRows = (prescription.medications || []).map((med, index) => [
     index + 1,
     med.medicine_name || med.name,
@@ -113,7 +113,7 @@ export const generatePrescriptionPDF = (prescription, patient) => {
 
   // Signature Area
   const signatureY = Math.max(finalY + 40, 250); // Keep it towards the bottom if possible
-  
+
   try {
     if (signatureImg) {
       doc.addImage(signatureImg, 'PNG', pageWidth - 60, signatureY - 20, 40, 15);
@@ -148,17 +148,45 @@ const calculateAge = (dob) => {
   }
 };
 
-export const shareViaWhatsApp = (prescription, patient) => {
+export const shareViaWhatsApp = async (prescription, patient) => {
   const patientName = patient ? `${patient.first_name || ''} ${patient.last_name || ''}`.trim() : 'Patient';
+  const fileName = `Prescription_${patientName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+
+  try {
+    // 1. Generate the PDF
+    const doc = generatePrescriptionPDF(prescription, patient);
+    const pdfBlob = doc.output('blob');
+    const file = new File([pdfBlob], fileName, { type: 'application/pdf' });
+
+    // 2. Try Native Web Share API (Works natively on Mobile phones/Tablets to share directly to WA app)
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({
+        files: [file],
+        title: 'Clinic Prescription',
+        text: `Prescription for ${patientName}`,
+      });
+      return; // Stop here if native share succeeds
+    } else {
+      // 3. Fallback for Desktop: We MUST download it because WhatsApp Web URL doesn't accept file attachments directly.
+      doc.save(fileName);
+    }
+  } catch (error) {
+    console.error('Error generating or sharing PDF:', error);
+  }
+
+  // 4. Construct the fallback message (now with an instruction to attach the downloaded file)
   const medsSummary = (prescription.medications || [])
     .map(m => `• ${m.medicine_name || m.name}: ${m.dosage} (${m.frequency})`)
     .join('%0A');
-    
-  const message = `*Dhanwantari Clinic - Digital Script*%0A%0A*Patient:* ${patientName}%0A*Date:* ${new Date().toLocaleDateString()}%0A%0A*Rx Medications:*%0A${medsSummary}%0A%0A*Advisory:* ${prescription.instructions || 'Follow as directed'}%0A%0A_Generated via ClinicFlow Digital Portal_`;
-  
+
+  const message = `*Dhanwantari Clinic - Digital Script*%0A%0A*Patient:* ${patientName}%0A*Date:* ${new Date().toLocaleDateString()}%0A%0A*Rx Medications:*%0A${medsSummary}%0A%0A*Advisory:* ${prescription.instructions || 'Follow as directed'}%0A%0A_(Please find the detailed PDF document attached to this message)_%0A%0A_Generated via ClinicFlow Desktop_`;
+
   const phone = patient?.phone ? patient.phone.replace(/\D/g, '') : '';
-  // Check for Indian number format
   const formattedPhone = phone.length === 10 ? '91' + phone : phone;
   const url = `https://wa.me/${formattedPhone}?text=${message}`;
-  window.open(url, '_blank');
+
+  // 5. Open WhatsApp Web (with a slight delay to ensure download starts first)
+  setTimeout(() => {
+    window.open(url, '_blank');
+  }, 500);
 };

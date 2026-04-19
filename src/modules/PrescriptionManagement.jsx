@@ -42,7 +42,7 @@ const PrescriptionManagement = () => {
         .from('prescriptions')
         .select(`
           *,
-          patients (first_name, last_name),
+          patients!patient_id (first_name, last_name),
           users!doctor_id (full_name)
         `)
         .order('created_at', { ascending: false });
@@ -383,6 +383,7 @@ const PrescriptionManagement = () => {
                   )}
                 </tbody>
               </table>
+              )}
             </div>
           </div>
 

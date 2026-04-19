@@ -367,17 +367,17 @@ const MedicalRecords = () => {
                 </div>
               )}
 
-              <div className="pt-8 border-t border-white/10 flex gap-4">
+            <div className="pt-8 border-t border-white/10 flex gap-4">
                 <button
                   onClick={() => navigate(`/prescriptions?patientId=${selectedRecord.patient_id}&diagnosis=${encodeURIComponent(selectedRecord.diagnosis)}`)}
                   className="flex-1 py-5 bg-teal-500 hover:bg-teal-400 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-teal-500/20 transition-all flex items-center justify-center gap-2"
                 >
-                  <Pill className="w-5 h-5" />
-                  Proceed to Prescription
+                  <Pill className="w-5 h-5 text-white" />
+                  Issue Prescription
                 </button>
                 <button
                   onClick={() => handleDownloadRecord(selectedRecord)}
-                  className="px-10 py-5 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-black text-xs uppercase tracking-widest border border-white/10 transition-all"
+                  className="px-8 py-5 bg-white/5 hover:bg-white/10 text-white rounded-2xl font-black text-xs uppercase tracking-widest border border-white/10 transition-all font-sans"
                 >
                   Download Report
                 </button>

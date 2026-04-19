@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Users, Clock, Activity, Plus, FileText, Building, X, Search, Pill, Calendar } from 'lucide-react';
+import { Users, Clock, Activity, Plus, FileText, Building, X, Search, Pill, Calendar, Info, MapPin, Phone, Code, Cpu, Mail, User } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
@@ -7,31 +7,12 @@ import { useAuth } from '../context/AuthContext';
 const DoctorDashboard = () => {
   const { user } = useAuth();
   const [stats, setStats] = useState({
-    todayAppointments: 0,
     totalPatients: 0,
     pendingPrescriptions: 0,
     visitedToday: 0
   });
-  const [todayList, setTodayList] = useState([]);
   const [showVisitsModal, setShowVisitsModal] = useState(false);
-  const [showQuickAddModal, setShowQuickAddModal] = useState(false);
-  const [modalType, setModalType] = useState('waiting'); // 'waiting' or 'completed'
-  const [patients, setPatients] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  async function fetchPatients() {
-    try {
-      const { data, error } = await supabase
-        .from('patients')
-        .select('id, first_name, last_name, phone')
-        .order('first_name');
-      if (error) throw error;
-      setPatients(data || []);
-    } catch (error) {
-      console.error('Error fetching patients:', error);
-    }
-  }
+  const [completedVisits, setCompletedVisits] = useState([]);
 
   async function fetchStats() {
     if (!user) return;
@@ -42,22 +23,37 @@ const DoctorDashboard = () => {
       const day = String(now.getDate()).padStart(2, '0');
       const todayStr = `${year}-${month}-${day}`;
       
-      console.log('Refetching queue for date:', todayStr);
-
-      const { data: allData, error: fetchError } = await supabase
+      const { data: rawAppointments, error: fetchError } = await supabase
         .from('appointments')
-        .select(`
-           *,
-           patients (first_name, last_name)
-        `)
+        .select('*')
         .order('appointment_time', { ascending: true });
 
       if (fetchError) throw fetchError;
-      
-      const todayData = (allData || []).filter(app => {
+
+      const todayCompleted = (rawAppointments || []).filter(app => {
         const appDate = app.appointment_date?.split('T')[0];
-        return appDate === todayStr;
+        return appDate === todayStr && app.status === 'completed';
       });
+
+      const patientIds = [...new Set(todayCompleted.map(a => a.patient_id))].filter(Boolean);
+
+      let patientsMap = {};
+      if (patientIds.length > 0) {
+        const { data: patientsData, error: patientsError } = await supabase
+          .from('patients')
+          .select('id, first_name, last_name')
+          .in('id', patientIds);
+          
+        if (!patientsError && patientsData) {
+          patientsData.forEach(p => { patientsMap[p.id] = p; });
+        }
+      }
+
+      const finalCompletedData = todayCompleted.map(app => ({
+        ...app,
+        patients: patientsMap[app.patient_id] || { first_name: 'Unknown', last_name: 'Patient' }
+      }));
+      setCompletedVisits(finalCompletedData);
 
       const { count: patientCount } = await supabase
         .from('patients')
@@ -68,76 +64,21 @@ const DoctorDashboard = () => {
         .select('*', { count: 'exact', head: true });
 
       setStats({
-        todayAppointments: (todayData || []).filter(v => v.status !== 'completed').length,
         totalPatients: patientCount || 0,
         pendingPrescriptions: prescriptionCount || 0,
-        visitedToday: (todayData || []).filter(v => v.status === 'completed').length
+        visitedToday: finalCompletedData.length
       });
 
-      const sortedQueue = (todayData || []).sort((a, b) => {
-        if (a.status === 'scheduled' && b.status !== 'scheduled') return -1;
-        if (a.status !== 'scheduled' && b.status === 'scheduled') return 1;
-        return 0;
-      });
-      setTodayList(sortedQueue);
     } catch (error) {
       console.error('Error fetching stats:', error);
-    }
-  }
-
-  async function addToQueue(patientId) {
-    if (!user) return;
-    setLoading(true);
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      const time = new Date().toTimeString().split(' ')[0].slice(0, 5);
-
-      const { data: insertData, error } = await supabase
-        .from('appointments')
-        .insert([{
-          patient_id: patientId,
-          doctor_id: user?.id,
-          appointment_date: today,
-          appointment_time: time,
-          reason: 'Walk-in Visit',
-          status: 'scheduled'
-        }])
-        .select();
-
-      if (error) throw error;
-      setShowQuickAddModal(false);
-      fetchStats(); 
-    } catch (error) {
-      console.error('Error adding to queue:', error);
-      alert('Failed to add to queue: ' + (error.message || 'Unknown error'));
-    } finally {
-      setLoading(false);
+      alert('DATABASE ERROR IN DASHBOARD: ' + (error.message || JSON.stringify(error)));
     }
   }
 
   useEffect(() => {
     if (!user) return;
-    
     fetchStats();
-    if (showQuickAddModal) {
-      fetchPatients();
-    }
-
-    const subscription = supabase
-      .channel('appointments_queue')
-      .on('postgres_changes', { 
-        event: '*', 
-        schema: 'public', 
-        table: 'appointments' 
-      }, () => {
-        fetchStats();
-      })
-      .subscribe();
-
-    return () => {
-      subscription.unsubscribe();
-    };
-  }, [user, showQuickAddModal]);
+  }, [user]);
 
   return (
     <div className="relative min-h-screen">
@@ -165,39 +106,30 @@ const DoctorDashboard = () => {
       {/* Stats row with Glass Panels */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         <div 
-          onClick={() => { setModalType('waiting'); setShowVisitsModal(true); }}
-          className="glass-card rounded-[2rem] p-8 flex flex-col relative justify-between min-h-[160px] cursor-pointer hover:shadow-2xl hover:bg-white/5 border-white/5 hover:border-teal-500/30 transition-all duration-300 group overflow-hidden"
+          className="glass-card rounded-[2rem] p-8 flex flex-col relative justify-between min-h-[160px] border-white/5 hover:border-teal-500/30 transition-all duration-300 group overflow-hidden"
         >
           <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity">
-            <Clock className="w-24 h-24 text-teal-600" strokeWidth={1} />
+            <Users className="w-24 h-24 text-teal-600" strokeWidth={1} />
           </div>
           <div className="flex items-center gap-3 mb-2">
             <div className="w-10 h-10 rounded-xl bg-teal-500/20 flex items-center justify-center border border-teal-500/30">
               <Users className="w-5 h-5 text-teal-200" />
             </div>
-            <p className="text-teal-100/70 text-sm font-bold tracking-widest uppercase">Waiting in Queue</p>
+            <p className="text-teal-100/70 text-sm font-bold tracking-widest uppercase">Total Registered Patients</p>
           </div>
-          <div className="flex items-end justify-between mt-auto relative z-10">
+          <div className="flex items-end justify-start mt-auto relative z-10">
             <p className="text-[3.5rem] font-black text-white leading-none tracking-tighter">
-              {stats.todayAppointments}
+              {stats.totalPatients}
             </p>
-            <div className="flex flex-col items-end">
-              <span className="text-teal-300 text-xs font-bold bg-teal-500/20 px-3 py-1 rounded-full mb-2">Active Wait</span>
-              <div className="flex -space-x-2">
-                {[1,2,3].map(i => (
-                  <div key={i} className="w-6 h-6 rounded-full border-2 border-white/30 bg-teal-500 blur-[1px]" />
-                ))}
-              </div>
-            </div>
           </div>
         </div>
 
         <div 
-          onClick={() => { setModalType('completed'); setShowVisitsModal(true); }}
+          onClick={() => setShowVisitsModal(true) }
           className="glass-card rounded-[2rem] p-8 flex flex-col relative justify-between min-h-[160px] cursor-pointer hover:shadow-2xl hover:bg-white/5 border-white/5 hover:border-blue-500/30 transition-all duration-300 group overflow-hidden"
         >
           <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity">
-            <Users className="w-24 h-24 text-blue-600" strokeWidth={1} />
+            <Activity className="w-24 h-24 text-blue-600" strokeWidth={1} />
           </div>
           <div className="flex items-center gap-3 mb-2">
             <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center border border-blue-500/30">
@@ -220,7 +152,6 @@ const DoctorDashboard = () => {
           { color: 'teal', icon: Plus, title: 'New Patient', desc: 'Register profiles', link: '/doctor/register-patient', label: 'Quick Start' },
           { color: 'blue', icon: FileText, title: 'Medical Records', desc: 'Patient history', link: '/doctor/patient-records', label: 'Search' },
           { color: 'amber', icon: Pill, title: 'Prescription Vault', desc: 'Archives & issuance', link: '/prescriptions', label: 'Pharmacy' },
-          { color: 'orange', icon: Users, title: 'Add to Queue', desc: 'Daily walk-ins', onClick: () => setShowQuickAddModal(true), label: 'Active' },
           { color: 'purple', icon: Building, title: 'External Shifts', desc: 'Off-site logs', link: '/doctor/external-visits', label: 'Travel' },
         ].map((item, idx) => {
           const CardContent = (
@@ -246,78 +177,75 @@ const DoctorDashboard = () => {
         })}
       </div>
 
-      {/* Live Walk-In Queue Section */}
-      <div className="w-full space-y-6">
-        <div className="flex items-center justify-between px-2">
-          <div className="flex items-center gap-3">
-            <div className="w-2 h-2 rounded-full bg-teal-500 animate-pulse shadow-[0_0_8px_rgba(20,184,166,0.8)]" />
-            <h2 className="text-2xl font-black text-white tracking-tight uppercase tracking-widest text-sm opacity-80">Live Patient Queue</h2>
+      {/* Informational & Utility Modules */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-10">
+        
+        {/* About The Developer */}
+        <div className="lg:col-span-2 glass-card rounded-[2.5rem] p-8 md:p-10 border-white/5 relative overflow-hidden group hover:bg-white/5 transition-all duration-500 hover:border-teal-500/20">
+          <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
+            <Code className="w-48 h-48 text-teal-400" strokeWidth={0.5} />
           </div>
-          <button 
-            onClick={() => fetchStats()}
-            className="text-teal-300 text-xs font-black uppercase tracking-[0.2em] hover:text-white transition-colors flex items-center gap-2"
-          >
-            <Activity className="w-4 h-4" />
-            Refresh List
-          </button>
+          
+          <div className="relative z-10">
+            <div className="flex items-center gap-5 mb-8">
+              <div className="w-16 h-16 rounded-3xl bg-gradient-to-br from-teal-500 to-blue-600 flex items-center justify-center shadow-[0_0_30px_rgba(20,184,166,0.3)]">
+                <Cpu className="w-8 h-8 text-white" strokeWidth={2.5} />
+              </div>
+              <div>
+                <h2 className="text-[1.8rem] leading-none font-black text-white tracking-tight mb-2">About The Developer</h2>
+                <p className="text-teal-300 text-[0.65rem] uppercase tracking-[0.2em] font-black">System Administration & Architecture</p>
+              </div>
+            </div>
+            
+            <p className="text-white/60 leading-relaxed font-medium mb-10 max-w-2xl text-sm">
+              ClinicFlow is a proprietary clinic management system engineered to revolutionize the way healthcare professionals operate. Designed with modern web architectures, it focuses on high-performance, real-time synchronization, and premium user experiences.
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="flex items-center gap-4 bg-white/5 p-5 rounded-[1.5rem] border border-white/5 hover:bg-white/10 transition-colors md:col-span-2">
+                <div className="w-10 h-10 rounded-xl bg-teal-500/20 flex items-center justify-center border border-teal-500/30">
+                  <User className="w-5 h-5 text-teal-300" />
+                </div>
+                <div>
+                  <p className="text-white/40 text-[0.6rem] uppercase tracking-[0.15em] font-black mb-1">Development Core Team</p>
+                  <p className="text-white text-xs font-bold">Gauri Kautkar, Shubham Kumbhar, Mrunmayi Channe, Anjali Vishwakarma</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 bg-white/5 p-5 rounded-[1.5rem] border border-white/5 hover:bg-white/10 transition-colors">
+                <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center border border-blue-500/30">
+                  <Mail className="w-5 h-5 text-blue-300" />
+                </div>
+                <div>
+                  <p className="text-white/40 text-[0.6rem] uppercase tracking-[0.15em] font-black mb-1">Admin Email</p>
+                  <p className="text-white text-xs font-bold">gaurikautkar27@gmail.com</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 bg-white/5 p-5 rounded-[1.5rem] border border-white/5 hover:bg-white/10 transition-colors">
+                <div className="w-10 h-10 rounded-xl bg-teal-500/20 flex items-center justify-center border border-teal-500/30">
+                  <Phone className="w-5 h-5 text-teal-300" />
+                </div>
+                <div>
+                  <p className="text-white/40 text-[0.6rem] uppercase tracking-[0.15em] font-black mb-1">Contact Support</p>
+                  <p className="text-white text-xs font-bold">9326373843</p>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="glass-card rounded-[2.5rem] overflow-hidden border-white/5 shadow-2xl">
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="bg-white/5 border-b border-white/10">
-                  <th className="px-8 py-6 text-left text-[0.65rem] font-black text-white/40 uppercase tracking-[0.25em]">Status</th>
-                  <th className="px-8 py-6 text-left text-[0.65rem] font-black text-white/40 uppercase tracking-[0.25em]">Patient Name</th>
-                  <th className="px-8 py-6 text-left text-[0.65rem] font-black text-white/40 uppercase tracking-[0.25em]">Time</th>
-                  <th className="px-8 py-6 text-right text-[0.65rem] font-black text-white/40 uppercase tracking-[0.25em]">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5">
-                {todayList.length === 0 ? (
-                  <tr>
-                    <td colSpan="4" className="px-8 py-20 text-center">
-                      <div className="flex flex-col items-center gap-4 opacity-20">
-                        <Users className="w-16 h-16 text-white" strokeWidth={1} />
-                        <p className="text-white font-bold tracking-widest uppercase text-xs">No patients in queue</p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  todayList.map((appointment) => (
-                    <tr key={appointment.id} className="group hover:bg-white/5 transition-colors">
-                      <td className="px-8 py-5">
-                        <span className={`px-3 py-1 rounded-full text-[0.6rem] font-black uppercase tracking-widest ${
-                          appointment.status === 'scheduled' 
-                            ? 'bg-amber-500/20 text-amber-300 border border-amber-500/20' 
-                            : 'bg-teal-500/20 text-teal-300 border border-teal-500/20'
-                        }`}>
-                          {appointment.status === 'scheduled' ? 'Waiting' : 'Completed'}
-                        </span>
-                      </td>
-                      <td className="px-8 py-5">
-                        <p className="text-white font-bold text-lg tracking-tight group-hover:text-teal-300 transition-colors">
-                          {appointment.patients?.first_name} {appointment.patients?.last_name}
-                        </p>
-                        <p className="text-white/30 text-xs uppercase tracking-widest font-black">ID: {appointment.patient_id.slice(0,8)}</p>
-                      </td>
-                      <td className="px-8 py-5 text-white/60 font-mono text-sm">
-                        {appointment.appointment_time?.slice(0, 5)}
-                      </td>
-                      <td className="px-8 py-5 text-right">
-                        <Link
-                          to={`/prescriptions?patientId=${appointment.patient_id}&appointmentId=${appointment.id}`}
-                          className="inline-flex items-center gap-2 px-5 py-2.5 bg-teal-500/10 hover:bg-teal-500 text-teal-300 hover:text-white rounded-xl border border-teal-500/20 transition-all font-black text-[0.65rem] uppercase tracking-widest"
-                        >
-                          Treat Patient
-                        </Link>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+        {/* Doctor's Daily Notepad */}
+        <div className="glass-card rounded-[2.5rem] p-8 border-white/5 relative overflow-hidden flex flex-col group hover:bg-white/5 transition-all duration-500 hover:border-amber-500/20">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-white font-black tracking-tight text-lg">Daily Memo</h3>
+            <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center border border-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.2)] group-hover:scale-110 transition-transform">
+              <Plus className="w-4 h-4 text-amber-300" />
+            </div>
           </div>
+          <textarea 
+            placeholder="Jot down quick reminders or follow-ups for today..."
+            className="w-full flex-1 bg-transparent border-none text-white/80 placeholder:text-white/20 resize-none flex-grow focus:outline-none custom-scrollbar text-sm leading-[1.8] font-medium"
+            defaultValue="1. Follow up with Ram's test reports at 4:00 PM.&#10;&#10;2. Check pharmacy inventory for Paracetamol & Azithromycin.&#10;&#10;3. Review Dr. Shah's referral notes for the new walk-in patient."
+          />
         </div>
       </div>
 
@@ -327,9 +255,9 @@ const DoctorDashboard = () => {
           <div className="glass-card w-full max-w-4xl rounded-[2.5rem] border-white/10 shadow-[0_0_50px_rgba(20,184,166,0.1)] overflow-hidden flex flex-col max-h-[85vh]">
             <div className="px-8 py-6 border-b border-white/10 flex items-center justify-between bg-white/5">
               <div className="flex items-center gap-3">
-                <div className={`w-3 h-3 rounded-full ${modalType === 'waiting' ? 'bg-amber-500' : 'bg-teal-500'} animate-pulse`} />
+                <div className={`w-3 h-3 rounded-full bg-blue-500 animate-pulse`} />
                 <h2 className="text-2xl font-black text-white tracking-tight uppercase tracking-widest text-sm">
-                  {modalType === 'waiting' ? 'Current Waiting List' : 'Today\'s Completed Visits'}
+                  Today's Completed Visits
                 </h2>
               </div>
               <button 
@@ -340,14 +268,14 @@ const DoctorDashboard = () => {
               </button>
             </div>
             
-            <div className="p-8 overflow-y-auto flex-1">
+            <div className="p-8 overflow-y-auto flex-1 custom-scrollbar">
               <div className="grid grid-cols-1 gap-4">
-                {todayList.filter(v => modalType === 'waiting' ? v.status === 'scheduled' : v.status === 'completed').length === 0 ? (
+                {completedVisits.length === 0 ? (
                   <div className="py-20 text-center opacity-30">
                     <p className="text-white font-bold tracking-widest uppercase text-xs">No records found</p>
                   </div>
                 ) : (
-                  todayList.filter(v => modalType === 'waiting' ? v.status === 'scheduled' : v.status === 'completed').map((visit) => (
+                  completedVisits.map((visit) => (
                     <div key={visit.id} className="p-6 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-between group hover:bg-white/10 transition-all">
                       <div>
                         <p className="text-white font-black text-xl tracking-tight mb-1">
@@ -361,79 +289,12 @@ const DoctorDashboard = () => {
                       <Link
                         to={`/prescriptions?patientId=${visit.patient_id}&appointmentId=${visit.id}`}
                         onClick={() => setShowVisitsModal(false)}
-                        className="px-6 py-3 bg-white/5 hover:bg-teal-500 text-white rounded-xl border border-white/10 transition-all font-black text-[0.6rem] uppercase tracking-widest"
+                        className="px-6 py-3 bg-white/5 hover:bg-blue-500 text-white rounded-xl border border-white/10 transition-all font-black text-[0.6rem] uppercase tracking-widest"
                       >
-                        {modalType === 'waiting' ? 'Treat Now' : 'View Summary'}
+                        View Summary
                       </Link>
                     </div>
                   ))
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Quick Add To Queue Modal */}
-      {showQuickAddModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 backdrop-blur-md bg-slate-950/60 animate-fade-in">
-          <div className="glass-card w-full max-w-2xl rounded-[2.5rem] border-white/10 shadow-2xl overflow-hidden flex flex-col max-h-[80vh]">
-            <div className="px-8 py-6 border-b border-white/10 flex items-center justify-between bg-white/5">
-              <div className="flex items-center gap-3">
-                <Plus className="w-5 h-5 text-teal-400" />
-                <h2 className="text-2xl font-black text-white tracking-tight uppercase tracking-widest text-sm">Add Patient to Queue</h2>
-              </div>
-              <button onClick={() => setShowQuickAddModal(false)} className="p-2 hover:bg-white/10 rounded-xl transition-colors group">
-                <X className="w-6 h-6 text-white/40 group-hover:text-white" />
-              </button>
-            </div>
-            
-            <div className="p-8">
-              <div className="relative mb-6">
-                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-white/30 w-5 h-5" />
-                <input
-                  type="text"
-                  placeholder="SEARCH REGISTERED PATIENTS..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-12 pr-6 text-white placeholder:text-white/40 font-black text-xs uppercase tracking-widest focus:outline-none focus:ring-2 focus:ring-teal-500/50 transition-all"
-                />
-              </div>
-
-              <div className="space-y-3 overflow-y-auto max-h-[40vh] pr-2 custom-scrollbar">
-                {patients.filter(p => `${p.first_name} ${p.last_name}`.toLowerCase().includes(searchQuery.toLowerCase())).length === 0 ? (
-                  <div className="text-center py-10 opacity-30">
-                    <p className="text-white text-xs font-black uppercase tracking-widest">No matching patients</p>
-                    <Link to="/doctor/register-patient" className="text-teal-400 underline mt-2 block">Register New Patient</Link>
-                  </div>
-                ) : (
-                  patients
-                    .filter(p => `${p.first_name} ${p.last_name}`.toLowerCase().includes(searchQuery.toLowerCase()))
-                    .map(patient => (
-                      <div 
-                        key={patient.id} 
-                        className="p-5 rounded-2xl bg-white/5 border border-white/5 flex items-center justify-between hover:bg-white/10 hover:border-teal-500/30 transition-all group"
-                      >
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-teal-500/20 to-blue-500/20 flex items-center justify-center border border-white/5 overflow-hidden">
-                            <span className="text-white font-black text-lg">{patient.first_name[0]}</span>
-                          </div>
-                          <div>
-                            <p className="text-white font-black text-lg tracking-tight group-hover:text-teal-300 transition-colors">
-                              {patient.first_name} {patient.last_name}
-                            </p>
-                            <p className="text-white/30 text-[0.65rem] font-bold uppercase tracking-widest">{patient.phone}</p>
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => addToQueue(patient.id)}
-                          disabled={loading}
-                          className="px-6 py-2.5 bg-teal-500 hover:bg-teal-400 text-white rounded-xl transition-all font-black text-[0.65rem] uppercase tracking-widest disabled:opacity-50"
-                        >
-                          {loading ? 'Adding...' : 'Add to Queue'}
-                        </button>
-                      </div>
-                    ))
                 )}
               </div>
             </div>

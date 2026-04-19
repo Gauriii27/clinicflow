@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
-import { Building, Calendar, Clock, Plus, Trash2, ArrowLeft, Hospital } from 'lucide-react';
+import { Building, Calendar, Clock, Plus, Trash2, ArrowLeft, Hospital, CheckCircle2, XCircle, Bell, BellOff, AlertTriangle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import bgImage from '../assets/medical_bg.png';
@@ -18,10 +18,39 @@ const ExternalVisits = () => {
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [notes, setNotes] = useState('');
+  const [reminderEnabled, setReminderEnabled] = useState(true);
+  const [activeReminder, setActiveReminder] = useState(null);
 
   useEffect(() => {
     fetchVisits();
   }, [user]);
+
+  // Simulated Reminder Engine
+  useEffect(() => {
+    if (visits.length === 0) return;
+
+    const checkReminders = () => {
+      const now = new Date();
+      const upcoming = visits.find(v => {
+        if (v.status === 'completed' || !v.reminder_enabled) return false;
+        
+        const visitDate = new Date(v.visit_date);
+        const [hours, minutes] = v.start_time.split(':');
+        visitDate.setHours(parseInt(hours), parseInt(minutes), 0);
+        
+        const diff = visitDate.getTime() - now.getTime();
+        return diff > 0 && diff < 30 * 60 * 1000; // Within 30 minutes
+      });
+
+      if (upcoming) {
+        setActiveReminder(upcoming);
+      }
+    };
+
+    const interval = setInterval(checkReminders, 60000);
+    checkReminders();
+    return () => clearInterval(interval);
+  }, [visits]);
 
   const fetchVisits = async () => {
     try {
@@ -59,7 +88,9 @@ const ExternalVisits = () => {
           visit_date: visitDate,
           start_time: startTime,
           end_time: endTime,
-          notes: notes
+          notes: notes,
+          status: 'scheduled',
+          reminder_enabled: reminderEnabled
         }])
         .select();
 
@@ -72,12 +103,41 @@ const ExternalVisits = () => {
         setStartTime('');
         setEndTime('');
         setNotes('');
+        setReminderEnabled(true);
       }
     } catch (error) {
       console.error('Error creating external visit:', error);
       alert('Failed to save visit!');
     } finally {
       setAdding(false);
+    }
+  };
+
+  const handleUpdateStatus = async (id, newStatus) => {
+    try {
+      const { error } = await supabase
+        .from('external_visits')
+        .update({ status: newStatus })
+        .eq('id', id);
+
+      if (error) throw error;
+      setVisits(visits.map(v => v.id === id ? { ...v, status: newStatus } : v));
+    } catch (error) {
+      console.error('Error updating status:', error);
+    }
+  };
+
+  const handleToggleReminder = async (id, currentState) => {
+    try {
+      const { error } = await supabase
+        .from('external_visits')
+        .update({ reminder_enabled: !currentState })
+        .eq('id', id);
+
+      if (error) throw error;
+      setVisits(visits.map(v => v.id === id ? { ...v, reminder_enabled: !currentState } : v));
+    } catch (error) {
+      console.error('Error toggling reminder:', error);
     }
   };
 
@@ -134,13 +194,35 @@ const ExternalVisits = () => {
                        {new Date(visit.visit_date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
                      </span>
                    </div>
-                   <div className="flex items-center gap-3 bg-white/5 px-4 py-2.5 rounded-2xl border border-white/5">
-                     <Clock className="w-4 h-4 text-blue-400/60" />
-                     <span className="text-xs font-black text-white/70 uppercase tracking-widest">
-                       {visit.start_time.slice(0,5)} — {visit.end_time.slice(0,5)}
-                     </span>
-                   </div>
-                </div>
+                    <div className="flex items-center gap-3 bg-white/5 px-4 py-2.5 rounded-2xl border border-white/5">
+                      <Clock className="w-4 h-4 text-blue-400/60" />
+                      <span className="text-xs font-black text-white/70 uppercase tracking-widest">
+                        {visit.start_time.slice(0,5)} — {visit.end_time.slice(0,5)}
+                      </span>
+                    </div>
+                    
+                    {/* Status Pill */}
+                    <div className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl border ${
+                      visit.status === 'completed' ? 'bg-teal-500/10 border-teal-500/30 text-teal-300' :
+                      visit.status === 'missed' ? 'bg-red-500/10 border-red-500/30 text-red-300' :
+                      'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                    }`}>
+                      <span className="text-[0.6rem] font-black uppercase tracking-widest">
+                        {visit.status || 'scheduled'}
+                      </span>
+                    </div>
+
+                    {/* Reminder Status */}
+                    <button 
+                      onClick={() => handleToggleReminder(visit.id, visit.reminder_enabled)}
+                      className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl border transition-all ${
+                        visit.reminder_enabled ? 'bg-blue-500/10 border-blue-500/30 text-blue-300' : 'bg-white/5 border-white/5 text-white/20'
+                      }`}
+                    >
+                      {visit.reminder_enabled ? <Bell className="w-3.5 h-3.5" /> : <BellOff className="w-3.5 h-3.5" />}
+                      <span className="text-[0.6rem] font-black uppercase tracking-widest">{visit.reminder_enabled ? 'Active' : 'Silent'}</span>
+                    </button>
+                 </div>
                 
                 {visit.notes && (
                   <div className="mt-6 p-5 bg-white/5 rounded-[1.5rem] border border-white/5 relative group-hover:bg-white/10 transition-colors">
@@ -148,15 +230,35 @@ const ExternalVisits = () => {
                   </div>
                 )}
              </div>
-             <div>
-                <button 
-                  onClick={() => handleDelete(visit.id)}
-                  className="w-14 h-14 flex items-center justify-center bg-red-500/10 text-red-400/40 hover:text-red-400 hover:bg-red-500/20 rounded-2xl transition-all border border-red-500/10 active:scale-95 shadow-lg group-hover:opacity-100 md:opacity-0"
-                  title="Delete Visit"
-                >
-                  <Trash2 className="w-6 h-6" />
-                </button>
-             </div>
+              <div className="flex flex-col gap-2">
+                 <div className="flex items-center gap-2">
+                   <button 
+                     onClick={() => handleUpdateStatus(visit.id, 'completed')}
+                     className={`w-12 h-12 flex items-center justify-center rounded-xl transition-all border ${
+                       visit.status === 'completed' ? 'bg-teal-500 text-white border-teal-500' : 'bg-white/5 text-white/20 border-white/5 hover:bg-teal-500/20 hover:text-teal-400'
+                     }`}
+                     title="Mark as Done"
+                   >
+                     <CheckCircle2 className="w-5 h-5" />
+                   </button>
+                   <button 
+                     onClick={() => handleUpdateStatus(visit.id, 'missed')}
+                     className={`w-12 h-12 flex items-center justify-center rounded-xl transition-all border ${
+                       visit.status === 'missed' ? 'bg-red-500 text-white border-red-500' : 'bg-white/5 text-white/20 border-white/5 hover:bg-red-500/20 hover:text-red-400'
+                     }`}
+                     title="Mark as Missed"
+                   >
+                     <XCircle className="w-5 h-5" />
+                   </button>
+                 </div>
+                 <button 
+                   onClick={() => handleDelete(visit.id)}
+                   className="w-full h-10 flex items-center justify-center bg-white/5 text-white/10 hover:text-red-400 hover:bg-red-500/20 rounded-xl transition-all border border-white/5 active:scale-95"
+                   title="Delete Entry"
+                 >
+                   <Trash2 className="w-4 h-4" />
+                 </button>
+              </div>
            </div>
          ))}
        </div>
@@ -181,6 +283,32 @@ const ExternalVisits = () => {
         <Navbar />
         
         <main className="flex-1 w-full max-w-6xl mx-auto py-10 px-6 space-y-12">
+          {/* Active Reminder Alert */}
+          {activeReminder && (
+            <div className="bg-gradient-to-r from-blue-600 to-teal-600 p-6 rounded-[2rem] shadow-2xl flex flex-col md:flex-row items-center justify-between gap-6 border border-white/20 animate-bounce-subtle">
+              <div className="flex items-center gap-5">
+                <div className="w-14 h-14 rounded-2xl bg-white/20 flex items-center justify-center backdrop-blur-md">
+                   <Bell className="w-7 h-7 text-white animate-ring" />
+                </div>
+                <div>
+                   <p className="text-white/70 text-[0.6rem] font-black uppercase tracking-widest mb-1">Upcoming External Shift</p>
+                   <h3 className="text-white text-xl font-black italic tracking-tight">{activeReminder.hospital_name}</h3>
+                </div>
+              </div>
+              <div className="flex items-center gap-4">
+                 <div className="text-right hidden md:block">
+                   <p className="text-white/60 text-[0.55rem] font-black uppercase tracking-widest">Time Slot</p>
+                   <p className="text-white font-black">{activeReminder.start_time.slice(0, 5)} — {activeReminder.end_time.slice(0, 5)}</p>
+                 </div>
+                 <button 
+                   onClick={() => setActiveReminder(null)}
+                   className="px-6 py-3 bg-white text-blue-600 rounded-xl font-black text-[0.6rem] uppercase tracking-widest hover:bg-blue-50 transition-colors shadow-lg"
+                 >
+                   Dismiss Alert
+                 </button>
+              </div>
+            </div>
+          )}
           {/* Header */}
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div>
@@ -255,16 +383,33 @@ const ExternalVisits = () => {
                        </div>
                      </div>
 
-                     <div className="space-y-2">
-                       <label className="text-[0.65rem] font-black text-teal-300 uppercase tracking-[0.2em] ml-2">Internal Notes</label>
-                       <textarea
-                         value={notes}
-                         onChange={(e) => setNotes(e.target.value)}
-                         rows="3"
-                         className="w-full px-5 py-4 bg-white/5 border border-white/10 rounded-2xl focus:outline-none focus:ring-4 focus:ring-teal-500/10 focus:bg-white/10 transition-all text-white font-medium resize-none"
-                         placeholder="Department or task..."
-                       ></textarea>
-                     </div>
+                      <div className="space-y-2">
+                        <label className="text-[0.65rem] font-black text-teal-300 uppercase tracking-[0.2em] ml-2">Internal Notes</label>
+                        <textarea
+                          value={notes}
+                          onChange={(e) => setNotes(e.target.value)}
+                          rows="2"
+                          className="w-full px-5 py-4 bg-white/5 border border-white/10 rounded-2xl focus:outline-none focus:ring-4 focus:ring-teal-500/10 focus:bg-white/10 transition-all text-white font-medium resize-none"
+                          placeholder="Department or task..."
+                        ></textarea>
+                      </div>
+
+                      <div className="flex items-center justify-between bg-white/5 p-5 rounded-2xl border border-white/5">
+                        <div className="flex items-center gap-3">
+                           <Bell className={`w-5 h-5 ${reminderEnabled ? 'text-teal-400' : 'text-white/20'}`} />
+                           <div>
+                             <p className="text-white text-[0.7rem] font-black uppercase tracking-widest">Reminders</p>
+                             <p className="text-white/30 text-[0.5rem] font-bold uppercase tracking-widest">Notify 30m before shift</p>
+                           </div>
+                        </div>
+                        <button 
+                          type="button"
+                          onClick={() => setReminderEnabled(!reminderEnabled)}
+                          className={`w-12 h-6 rounded-full relative transition-all duration-300 ${reminderEnabled ? 'bg-teal-500' : 'bg-white/10'}`}
+                        >
+                          <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all duration-300 ${reminderEnabled ? 'left-7' : 'left-1'}`} />
+                        </button>
+                      </div>
 
                      <button
                        type="submit"

@@ -36,13 +36,29 @@ body {
 
 /* Bubble Animations */
 @keyframes float {
-  0%, 100% { transform: translateY(0) translateX(0); }
-  50% { transform: translateY(-20px) translateX(10px); }
+
+  0%,
+  100% {
+    transform: translateY(0) translateX(0);
+  }
+
+  50% {
+    transform: translateY(-20px) translateX(10px);
+  }
 }
 
 @keyframes pulse-glow {
-  0%, 100% { opacity: 0.5; filter: blur(40px); }
-  50% { opacity: 0.8; filter: blur(60px); }
+
+  0%,
+  100% {
+    opacity: 0.5;
+    filter: blur(40px);
+  }
+
+  50% {
+    opacity: 0.8;
+    filter: blur(60px);
+  }
 }
 
 .animate-float {
@@ -76,3 +92,19 @@ html {
   background: rgba(21, 128, 61, 0.8);
 }
 
+
+/* Fix for Chrome/Safari Autofill Backgrounds */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 30px #0f172a inset !important;
+  -webkit-text-fill-color: white !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+/* Base Input Resets */
+input {
+  background-color: transparent;
+  color: white;
+}
